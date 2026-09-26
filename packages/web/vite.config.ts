@@ -96,6 +96,12 @@ export default defineConfig(({ mode }) => {
     build: {
       // 生产不在浏览器产物暴露 sourceMappingURL，避免客户端侧还原业务源码。
       sourcemap: mode === "production" ? "hidden" : true,
+      rollupOptions: {
+        input: {
+          main: resolve(__dirname, "index.html"),
+          mobile: resolve(__dirname, "mobile.html"),
+        },
+      },
     },
   };
 });
