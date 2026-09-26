@@ -113,9 +113,16 @@ export function ChatScreen({
       if (effectiveModelValue) {
         try {
           const parsed = parseModelPickerValue(effectiveModelValue);
+          // 档位随提交发送（与桌面草稿语义一致）：优先用户选择/服务端当前档，
+          // 再退到原值自带档位与目录默认档。剥掉档位会让强制要求 reasoning
+          // level 的模型（如 GLM-5.3 会员源）在 model_creation 阶段直接报错。
+          const reasoning =
+            (effectiveThought.length > 0 ? effectiveThought : null) ??
+            parsed.options?.reasoningLevel ??
+            effectiveModel?.defaultThoughtLevel;
           modelSelection = {
             ...parsed,
-            options: draft.thought ? { reasoningLevel: draft.thought } : undefined,
+            ...(reasoning ? { options: { reasoningLevel: reasoning } } : {}),
           };
         } catch {
           // 原值解析失败则不带 modelSelection，与旧行为一致。

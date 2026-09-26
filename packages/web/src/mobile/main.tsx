@@ -181,6 +181,10 @@ function MobileApp() {
       const created = await service.createTask({
         workspacePath: workspace.path,
         workspaceIdentity: workspace.workspaceIdentity,
+        // 首发前的空 session 不落库，session_input 有 session 外键；deferred 让 V4
+        // admission 在首发时先持久化 session 主记录，否则首条 prompt 稳定触发
+        // FOREIGN KEY constraint failed（与 automation / 闲时任务同款修复）。
+        deferPersistenceUntilFirstPrompt: true,
       });
       setTasks((current) => [created, ...current]);
       openTask(created);
