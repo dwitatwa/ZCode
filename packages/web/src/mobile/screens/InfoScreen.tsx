@@ -1,10 +1,12 @@
 /**
  * Info 屏：当前任务的运行信息。
+ * antd-mobile NavBar/ProgressCircle/List/Tag/SpinLoading + lucide 图标。
  * 上下文 / 缓存 / 计划 / 后台任务 / 诊断来自快照轮询（App 3s）；
  * 子代理 / workflow run / 累计 token 用量在可见时按 5s 轮询专用 RPC。
  * taskId 即 agent sessionId（zcode-task-types-core），所以 v4 查询直接用 taskId。
  */
 import { useEffect, useState, type ReactNode } from "react";
+import { List, NavBar, ProgressCircle, SpinLoading, Tag } from "antd-mobile";
 import type { IZCodeAgentService, IZCodeTaskService } from "@zcode/services";
 import type {
   ZCodeSessionEndedSubagent,
@@ -30,10 +32,6 @@ function percent(used: number | undefined, size: number | undefined): number | n
   return Math.min(100, Math.round((used / size) * 100));
 }
 
-function shortStatus(status: string): string {
-  return status;
-}
-
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div className="info-section">
@@ -45,9 +43,55 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 
 function Kv({ label, value }: { label: string; value: ReactNode }) {
   return (
-    <div className="kv-row">
-      <span className="kv-label">{label}</span>
-      <span className="kv-value">{value}</span>
+    <List.Item extra={<span className="kv-value">{value}</span>}>{label}</List.Item>
+  );
+}
+
+const STATUS_TAG_COLOR: Record<string, string> = {
+  running: "primary",
+  waiting: "primary",
+  success: "success",
+  completed: "success",
+  failed: "danger",
+  errored: "danger",
+  blocked: "danger",
+  cancelled: "warning",
+  lost: "warning",
+  stopped: "warning",
+  pending: "default",
+};
+
+function StatusTag({ status }: { status: string }) {
+  return (
+    <Tag color={STATUS_TAG_COLOR[status] ?? "default"} fill="outline" style={{ fontSize: 10 }}>
+      {status}
+    </Tag>
+  );
+}
+
+function AgentRow({
+  dotStatus,
+  tagStatus,
+  title,
+  sub,
+  tail,
+}: {
+  dotStatus: string;
+  tagStatus: string;
+  title: string;
+  sub: string;
+  tail?: string;
+}) {
+  return (
+    <div className="agent-row">
+      <span className={`agent-dot ${dotStatus}`} />
+      <div className="agent-main">
+        <div className="agent-title">{title}</div>
+        <div className="agent-sub">
+          {sub} <StatusTag status={tagStatus} />
+        </div>
+        {tail ? <pre className="job-tail">{tail}</pre> : null}
+      </div>
     </div>
   );
 }
@@ -140,46 +184,67 @@ export function InfoScreen({
 
   return (
     <>
-      <header className="topbar">
-        <div className="topbar-title">
-          <span className="folder">ℹ️</span>
-          <span className="title-text">{meta.title}</span>
-        </div>
-      </header>
+      <NavBar back={null} style={{ ["--background-color" as string]: "var(--surface)" }}>
+        <span className="title-text">Task info</span>
+      </NavBar>
 
       <div className="info-scroll">
         <Section title="Session">
-          <Kv label="Model" value={modelOption ? String(modelOption.currentValue) : (meta.model ?? "—")} />
-          <Kv
-            label="Thinking"
-            value={thoughtOption ? thoughtLabel(String(thoughtOption.currentValue)) : (meta.thoughtLevel ? thoughtLabel(meta.thoughtLevel) : "—")}
-          />
-          <Kv label="Mode" value={meta.mode ?? "—"} />
-          <Kv label="Status" value={meta.status ?? "—"} />
-          <Kv label="Created" value={new Date(meta.createdAt).toLocaleString()} />
+          <List>
+            <Kv
+              label="Model"
+              value={modelOption ? String(modelOption.currentValue) : (meta.model ?? "—")}
+            />
+            <Kv
+              label="Thinking"
+              value={
+                thoughtOption
+                  ? thoughtLabel(String(thoughtOption.currentValue))
+                  : meta.thoughtLevel
+                    ? thoughtLabel(meta.thoughtLevel)
+                    : "—"
+              }
+            />
+            <Kv label="Mode" value={meta.mode ?? "—"} />
+            <Kv label="Status" value={meta.status ? <StatusTag status={meta.status} /> : "—"} />
+            <Kv label="Created" value={new Date(meta.createdAt).toLocaleString()} />
+          </List>
         </Section>
 
         <Section title="Context">
           {contextPct === null ? (
             <div className="info-note">No live context yet — starts with the first turn.</div>
           ) : (
-            <>
-              <div className="meter">
-                <div className="meter-fill" style={{ width: `${contextPct}%` }} />
+            <div className="context-row">
+              <ProgressCircle percent={contextPct} style={{ "--size": "72px", "--track-width": "6px", "--track-color": "var(--surface-2)", "--fill-color": "var(--accent)", fontSize: 14 }}>
+                {contextPct}%
+              </ProgressCircle>
+              <div className="context-meta">
+                <div>
+                  <b>{formatTokens(contextUsage?.used)}</b> / {formatTokens(contextUsage?.size)}
+                </div>
+                {contextUsage?.cost ? <div>${contextUsage.cost.amount.toFixed(4)}</div> : null}
               </div>
-              <Kv label="Used" value={`${formatTokens(contextUsage?.used)} / ${formatTokens(contextUsage?.size)} (${contextPct}%)`} />
-              {contextUsage?.cost ? <Kv label="Cost" value={`$${contextUsage.cost.amount.toFixed(4)}`} /> : null}
-            </>
+            </div>
           )}
         </Section>
 
         <Section title="Cache">
           {cache ? (
-            <>
-              <Kv label="Hit rate" value={cache.hitRate != null ? `${Math.round(cache.hitRate * 100)}%` : cache.latestHitRate != null ? `${Math.round(cache.latestHitRate * 100)}%` : "—"} />
+            <List>
+              <Kv
+                label="Hit rate"
+                value={
+                  cache.hitRate != null
+                    ? `${Math.round(cache.hitRate * 100)}%`
+                    : cache.latestHitRate != null
+                      ? `${Math.round(cache.latestHitRate * 100)}%`
+                      : "—"
+                }
+              />
               <Kv label="Cache read" value={formatTokens(cache.cacheReadTokens)} />
               <Kv label="Cache write" value={formatTokens(cache.cacheWriteTokens)} />
-            </>
+            </List>
           ) : (
             <div className="info-note">No cache stats yet.</div>
           )}
@@ -187,7 +252,7 @@ export function InfoScreen({
 
         <Section title="Token usage (cumulative)">
           {usage ? (
-            <>
+            <List>
               <Kv label="Total" value={formatTokens(usage.totalTokens)} />
               <Kv label="Input" value={formatTokens(usage.inputTokens)} />
               <Kv label="Output" value={formatTokens(usage.outputTokens)} />
@@ -195,9 +260,9 @@ export function InfoScreen({
               <Kv label="Cache read" value={formatTokens(usage.cacheReadTokens)} />
               <Kv label="Cache write" value={formatTokens(usage.cacheCreationTokens)} />
               <Kv label="Requests" value={`${usage.modelRequestCount} (${usage.modelErrorCount} failed)`} />
-            </>
+            </List>
           ) : (
-            <div className="info-note">Loading usage…</div>
+            <SpinLoading color="primary" style={{ "--size": "18px" }} />
           )}
         </Section>
 
@@ -209,30 +274,27 @@ export function InfoScreen({
           ) : (
             <>
               {subagents.running.map((sub) => (
-                <div key={sub.childSessionId} className="agent-row">
-                  <span className={`agent-dot ${shortStatus(sub.status)}`} />
-                  <div className="agent-main">
-                    <div className="agent-title">{sub.title}</div>
-                    <div className="agent-sub">
-                      {sub.subagentType} · {sub.status}
-                      {sub.startedAt ? ` · ${new Date(sub.startedAt).toLocaleTimeString()}` : ""}
-                    </div>
-                  </div>
-                </div>
+                <AgentRow
+                  key={sub.childSessionId}
+                  dotStatus={sub.status}
+                  tagStatus={sub.status}
+                  title={sub.title}
+                  sub={`${sub.subagentType}${sub.startedAt ? ` · ${new Date(sub.startedAt).toLocaleTimeString()}` : ""}`}
+                />
               ))}
               {subagents.ended.map((sub) => (
-                <div key={sub.childSessionId} className="agent-row">
-                  <span className={`agent-dot ${sub.status === "success" ? "success" : "failed"}`} />
-                  <div className="agent-main">
-                    <div className="agent-title">{sub.title}</div>
-                    <div className="agent-sub">
-                      {sub.subagentType} · {sub.status}
-                    </div>
-                  </div>
-                </div>
+                <AgentRow
+                  key={sub.childSessionId}
+                  dotStatus={sub.status}
+                  tagStatus={sub.status}
+                  title={sub.title}
+                  sub={sub.subagentType}
+                />
               ))}
               {subagents.endedTotal > subagents.ended.length ? (
-                <div className="info-note">+ {subagents.endedTotal - subagents.ended.length} earlier subagent(s)</div>
+                <div className="info-note">
+                  + {subagents.endedTotal - subagents.ended.length} earlier subagent(s)
+                </div>
               ) : null}
             </>
           )}
@@ -245,18 +307,15 @@ export function InfoScreen({
             <div className="info-note">No workflow runs in this task.</div>
           ) : (
             runs.map((run) => (
-              <div key={run.runId} className="agent-row">
-                <span className={`agent-dot ${run.status === "running" ? "running" : run.status === "completed" ? "success" : "failed"}`} />
-                <div className="agent-main">
-                  <div className="agent-title">{run.label ?? run.runId}</div>
-                  <div className="agent-sub">
-                    {run.status}
-                    {run.stopReason ? ` · ${run.stopReason}` : ""}
-                    {run.updatedAt ? ` · ${new Date(run.updatedAt).toLocaleTimeString()}` : ""}
-                    {run.resumable ? " · resumable" : ""}
-                  </div>
-                </div>
-              </div>
+              <AgentRow
+                key={run.runId}
+                dotStatus={run.status}
+                tagStatus={run.status}
+                title={run.label ?? run.runId}
+                sub={`${run.stopReason ? `${run.stopReason} · ` : ""}${
+                  run.updatedAt ? `${new Date(run.updatedAt).toLocaleTimeString()} · ` : ""
+                }${run.resumable ? "resumable" : "final"}`}
+              />
             ))
           )}
         </Section>
@@ -265,7 +324,9 @@ export function InfoScreen({
           <Section title="Plan">
             {plan.map((step) => (
               <div key={step.id} className="plan-row">
-                <span className="plan-mark">{step.status === "completed" ? "✓" : step.status === "in_progress" ? "●" : "○"}</span>
+                <span className="plan-mark">
+                  {step.status === "completed" ? "✓" : step.status === "in_progress" ? "●" : "○"}
+                </span>
                 <span className="plan-title">{step.title}</span>
               </div>
             ))}
@@ -275,43 +336,54 @@ export function InfoScreen({
         {jobs.length > 0 && (
           <Section title="Background jobs">
             {jobs.map((job) => (
-              <div key={job.jobId} className="agent-row">
-                <span className={`agent-dot ${job.status === "running" ? "running" : job.status === "completed" ? "success" : "failed"}`} />
-                <div className="agent-main">
-                  <div className="agent-title">{job.title ?? job.command}</div>
-                  <div className="agent-sub">{job.taskKind} · {job.status}</div>
-                  {(job.outputTail ?? job.stdoutTail) ? (
-                    <pre className="job-tail">{(job.outputTail ?? job.stdoutTail ?? "").slice(-400)}</pre>
-                  ) : null}
-                </div>
-              </div>
+              <AgentRow
+                key={job.jobId}
+                dotStatus={job.status}
+                tagStatus={job.status}
+                title={job.title ?? job.command}
+                sub={job.taskKind}
+                tail={job.outputTail ?? job.stdoutTail ? (job.outputTail ?? job.stdoutTail ?? "").slice(-400) : undefined}
+              />
             ))}
           </Section>
         )}
 
         <Section title="Diagnostics">
           {runtime?.apiRetry ? (
-            <Kv label="API retry" value={`attempt ${runtime.apiRetry.attempt}/${runtime.apiRetry.maxRetries}${runtime.apiRetry.errorStatus ? ` (${runtime.apiRetry.errorStatus})` : ""}`} />
+            <List>
+              <Kv
+                label="API retry"
+                value={`attempt ${runtime.apiRetry.attempt}/${runtime.apiRetry.maxRetries}${
+                  runtime.apiRetry.errorStatus ? ` (${runtime.apiRetry.errorStatus})` : ""
+                }`}
+              />
+            </List>
           ) : null}
-          {meta.lastError ? <Kv label="Last error" value={meta.lastError.message} /> : null}
+          {meta.lastError ? (
+            <List>
+              <Kv label="Last error" value={meta.lastError.message} />
+            </List>
+          ) : null}
           {meta.changeSummary ? (
-            <Kv
-              label="Changes"
-              value={`${meta.changeSummary.fileCount} file(s), +${meta.changeSummary.added} −${meta.changeSummary.removed}`}
-            />
+            <List>
+              <Kv
+                label="Changes"
+                value={`${meta.changeSummary.fileCount} file(s), +${meta.changeSummary.added} −${meta.changeSummary.removed}`}
+              />
+            </List>
           ) : null}
           {runtime?.goalStats ? (
-            <Kv
-              label="Activity"
-              value={`${runtime.goalStats.toolCallCount} tool calls · ${runtime.goalStats.iterationCount} iterations`}
-            />
+            <List>
+              <Kv
+                label="Activity"
+                value={`${runtime.goalStats.toolCallCount} tool calls · ${runtime.goalStats.iterationCount} iterations`}
+              />
+            </List>
           ) : null}
           {!runtime?.apiRetry && !meta.lastError && !meta.changeSummary && !runtime?.goalStats && (
             <div className="info-note">Nothing notable.</div>
           )}
         </Section>
-
-        <div className="sheet-tail-space" />
       </div>
     </>
   );

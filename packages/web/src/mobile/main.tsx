@@ -1,5 +1,5 @@
 /**
- * ZCode Mobile — 三屏结构（/mobile.html）：
+ * ZCode Mobile — 三屏结构（/mobile.html），antd-mobile + lucide-react：
  *   Explorer：项目选择 + 任务列表（新建 / 归档 / 删除 / 归档区管理）
  *   Chat：快照轮询会话 + composer（Access / Model / Thinking 选择器）
  *   Info：上下文 / 缓存 / 子代理 / workflow / 用量 / 诊断
@@ -8,8 +8,13 @@
  */
 import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { Badge, SafeArea, TabBar, Toast } from "antd-mobile";
+import { FolderOpen, Info, MessageSquareMore } from "lucide-react";
 import type { IServiceAccessor } from "@zcode/services";
 import type { ZCodeTaskMeta } from "@zcode/shared";
+import "antd-mobile/es/global/global.css";
+import "./mobile.css";
+import "./lib/adm-react19.js";
 import { connectMobile, fetchServerInfo, type MobileWorkspaceInfo } from "./lib/connection.js";
 import { emptyDraft, type ComposerDraft, type MobileTaskSnapshot } from "./lib/types.js";
 import { ExplorerScreen } from "./screens/ExplorerScreen.js";
@@ -20,39 +25,6 @@ const servicesRef: { current: IServiceAccessor | null } = { current: null };
 
 type Phase = "connecting" | "ready" | "error";
 type Tab = "explorer" | "chat" | "info";
-
-function TabBar({
-  tab,
-  onTab,
-  hasTask,
-  pendingCount,
-}: {
-  tab: Tab;
-  onTab: (tab: Tab) => void;
-  hasTask: boolean;
-  pendingCount: number;
-}) {
-  const item = (id: Tab, icon: string, label: string, disabled: boolean, dot = false) => (
-    <button
-      className={`tab${tab === id ? " active" : ""}`}
-      disabled={disabled}
-      onClick={() => onTab(id)}
-    >
-      <span className="tab-icon">
-        {icon}
-        {dot ? <span className="tab-dot" /> : null}
-      </span>
-      <span className="tab-label">{label}</span>
-    </button>
-  );
-  return (
-    <nav className="tabbar">
-      {item("explorer", "📁", "Explorer", false)}
-      {item("chat", "💬", "Chat", !hasTask)}
-      {item("info", "ℹ️", "Info", !hasTask, pendingCount > 0)}
-    </nav>
-  );
-}
 
 function MobileApp() {
   const [phase, setPhase] = useState<Phase>("connecting");
@@ -189,7 +161,10 @@ function MobileApp() {
       setTasks((current) => [created, ...current]);
       openTask(created);
     } catch (error) {
-      alert(`Create failed: ${error instanceof Error ? error.message : String(error)}`);
+      Toast.show({
+        icon: "fail",
+        content: `Create failed: ${error instanceof Error ? error.message : String(error)}`,
+      });
     } finally {
       setCreating(false);
     }
@@ -204,6 +179,7 @@ function MobileApp() {
   };
 
   const pendingCount = snapshot?.runtime?.pendingPermissions?.length ?? 0;
+  const hasTask = activeTask !== null;
 
   if (phase === "connecting") {
     return <div className="empty">Connecting…</div>;
@@ -280,7 +256,35 @@ function MobileApp() {
           />
         )}
       </div>
-      <TabBar tab={tab} onTab={setTab} hasTask={activeTask !== null} pendingCount={pendingCount} />
+      <TabBar
+        activeKey={tab}
+        safeArea={false}
+        onChange={(key) => {
+          if ((key === "chat" || key === "info") && !hasTask) return;
+          setTab(key as Tab);
+        }}
+      >
+        <TabBar.Item key="explorer" icon={<FolderOpen size={20} />} title="Explorer" />
+        <TabBar.Item
+          key="chat"
+          icon={<MessageSquareMore size={20} />}
+          title="Chat"
+          badge={hasTask ? undefined : <span className="tab-disabled">–</span>}
+        />
+        <TabBar.Item
+          key="info"
+          icon={
+            <span style={{ position: "relative", display: "inline-flex" }}>
+              <Info size={20} />
+              {pendingCount > 0 ? (
+                <Badge content={Badge.dot} style={{ "--top": "-2px", "--right": "-4px" }} />
+              ) : null}
+            </span>
+          }
+          title="Info"
+        />
+      </TabBar>
+      <SafeArea position="bottom" />
     </>
   );
 }

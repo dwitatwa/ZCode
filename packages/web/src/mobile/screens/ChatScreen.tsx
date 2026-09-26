@@ -1,9 +1,18 @@
 /**
  * Chat（Main）屏：快照轮询的会话视图 + 带三个选择器的 composer。
- * Access（协作模式）/ Model / Thinking 全部来自快照 configOptions 的服务端投影；
+ * antd-mobile NavBar/TextArea/DotLoading/ActionSheet + lucide 图标。
+ * Access / Model / Thinking 全部来自快照 configOptions 的服务端投影；
  * 草稿随 sendPrompt 提交（modelSelection.options.reasoningLevel + mode），不落任务配置。
  */
 import { useEffect, useRef, useState } from "react";
+import { ActionSheet, DotLoading, NavBar, TextArea, Toast } from "antd-mobile";
+import {
+  ArrowUp,
+  Brain,
+  ChevronDown,
+  Cpu,
+  Square,
+} from "lucide-react";
 import type { IZCodeTaskService } from "@zcode/services";
 import type { ZCodePersistedMessage, ZCodeTaskMeta } from "@zcode/shared";
 import { parseModelPickerValue } from "@zcode/shared/model-selection";
@@ -17,7 +26,7 @@ import {
 } from "../lib/catalog.js";
 import type { ComposerDraft, MobileTaskSnapshot } from "../lib/types.js";
 import { newTraceId } from "../lib/connection.js";
-import { OptionSheet } from "../components/Sheet.js";
+import { GroupedOptionSheet } from "../components/Sheet.js";
 
 const SUBMITTABLE_MODES = ["build", "edit", "plan", "yolo"] as const;
 
@@ -139,7 +148,11 @@ export function ChatScreen({
       });
       stickToBottomRef.current = true;
     } catch (error) {
-      alert(`Send failed: ${error instanceof Error ? error.message : String(error)}`);
+      Toast.show({
+        icon: "fail",
+        content: `Send failed: ${error instanceof Error ? error.message : String(error)}`,
+        duration: 4000,
+      });
     } finally {
       setSending(false);
     }
@@ -165,20 +178,18 @@ export function ChatScreen({
 
   return (
     <>
-      <header className="topbar">
-        <button className="icon-btn" onClick={onBack} aria-label="Back to explorer">
-          ←
-        </button>
-        <div className="topbar-title">
-          <span className="folder">📁</span>
-          <span className="title-text">{meta.title}</span>
-        </div>
-        {generating ? <span className="generating-badge">●</span> : null}
-      </header>
+      <NavBar
+        onBack={onBack}
+        backArrow
+        right={generating ? <DotLoading color="primary" /> : null}
+        style={{ ["--background-color" as string]: "var(--surface)" }}
+      >
+        <span className="title-text">{meta.title}</span>
+      </NavBar>
 
       {pendingPermissions.length > 0 && (
         <div className="perm-banner">
-          ⚠ {pendingPermissions.length} permission request(s) pending — approve in the desktop app
+          {pendingPermissions.length} permission request(s) pending — approve in the desktop app
         </div>
       )}
 
@@ -198,7 +209,9 @@ export function ChatScreen({
         ))}
         {generating && (
           <div className="bubble-row assistant">
-            <div className="bubble bubble-assistant typing">···</div>
+            <div className="bubble bubble-assistant typing">
+              <DotLoading />
+            </div>
           </div>
         )}
       </div>
@@ -206,28 +219,31 @@ export function ChatScreen({
       <div className="composer">
         <div className="composer-chips">
           <button className="chip" onClick={() => setSheet("mode")}>
-            {accessModeLabel(rawMode)} ▾
+            {accessModeLabel(rawMode)} <ChevronDown size={11} />
           </button>
           {modelOption && (
             <button className="chip" onClick={() => setSheet("model")}>
+              <Cpu size={12} />
               <span className="chip-ellipsis">
                 {effectiveModel?.name ?? (effectiveModelValue || "Model")}
-              </span>{" "}
-              ▾
+              </span>
+              <ChevronDown size={11} />
             </button>
           )}
           {thoughtLevels.length > 0 && (
             <button className="chip" onClick={() => setSheet("thought")}>
-              🧠 {effectiveThought ? thoughtLabel(effectiveThought) : "Thinking"} ▾
+              <Brain size={12} />
+              {effectiveThought.length > 0 ? thoughtLabel(effectiveThought) : "Thinking"}
+              <ChevronDown size={11} />
             </button>
           )}
         </div>
         <div className="composer-input-row">
-          <textarea
+          <TextArea
             value={input}
             placeholder={generating ? "Generating… you can queue a message" : "Ask for changes…"}
-            rows={1}
-            onChange={(event) => setInput(event.target.value)}
+            autoSize={{ minRows: 1, maxRows: 4 }}
+            onChange={(value) => setInput(value)}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey) {
                 event.preventDefault();
@@ -236,7 +252,7 @@ export function ChatScreen({
             }}
           />
           <button className="send-btn stop" onClick={() => void stop()} aria-label="Stop generation">
-            ■
+            <Square size={15} fill="currentColor" />
           </button>
           <button
             className="send-btn"
@@ -244,26 +260,24 @@ export function ChatScreen({
             disabled={sending || !input.trim()}
             aria-label="Send"
           >
-            ↑
+            <ArrowUp size={18} strokeWidth={2.6} />
           </button>
         </div>
       </div>
 
       {sheet === "mode" && (
-        <OptionSheet
-          title="Access mode"
-          groups={[
-            {
-              options: ACCESS_MODES.map((mode) => ({
-                value: mode.value,
-                label: mode.label,
-                sub: mode.description,
-                selected: mode.value === rawMode,
-              })),
-            },
-          ]}
-          onPick={(value) => {
-            onDraftChange({ ...draft, mode: value });
+        <ActionSheet
+          visible
+          extra="Access mode"
+          cancelText="Cancel"
+          closeOnAction
+          actions={ACCESS_MODES.map((mode) => ({
+            key: mode.value,
+            text: `${mode.label}${mode.value === rawMode ? " ✓" : ""}`,
+            description: mode.description,
+          }))}
+          onAction={(action) => {
+            onDraftChange({ ...draft, mode: String(action.key) });
             setSheet(null);
           }}
           onClose={() => setSheet(null)}
@@ -271,7 +285,7 @@ export function ChatScreen({
       )}
 
       {sheet === "model" && (
-        <OptionSheet
+        <GroupedOptionSheet
           title="Model"
           groups={modelGroups.map((group) => ({
             label: group.providerName,
@@ -298,20 +312,18 @@ export function ChatScreen({
       )}
 
       {sheet === "thought" && (
-        <OptionSheet
-          title="Thinking"
-          groups={[
-            {
-              options: thoughtLevels.map((level) => ({
-                value: level,
-                label: thoughtLabel(level),
-                sub: level !== thoughtLabel(level) ? level : undefined,
-                selected: level === effectiveThought,
-              })),
-            },
-          ]}
-          onPick={(value) => {
-            onDraftChange({ ...draft, thought: value });
+        <ActionSheet
+          visible
+          extra="Thinking"
+          cancelText="Cancel"
+          closeOnAction
+          actions={thoughtLevels.map((level) => ({
+            key: level,
+            text: `${thoughtLabel(level)}${level === effectiveThought ? " ✓" : ""}`,
+            description: level !== thoughtLabel(level) ? level : undefined,
+          }))}
+          onAction={(action) => {
+            onDraftChange({ ...draft, thought: String(action.key) });
             setSheet(null);
           }}
           onClose={() => setSheet(null)}
