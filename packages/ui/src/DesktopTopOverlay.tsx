@@ -102,6 +102,7 @@ export function DesktopTopOverlay({
   return (
     <div
       style={topOverlayWidthStyle}
+      data-desktop-top-overlay="true"
       className={cn(
         "@container/topoverlayer pointer-events-none absolute h-14 flex left-0 top-0 z-20 w-fit",
         // Windows/Linux 主面板新增 4px 留白及 1px 边框，左侧工具组需同步偏移才能对齐 Header 中心线。

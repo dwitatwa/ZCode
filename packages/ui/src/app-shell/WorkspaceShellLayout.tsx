@@ -1948,6 +1948,9 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
             windowsWindowControlsRightPaddingPx={windowsWindowControlsRightPaddingPx}
             isWindowsDesktop={isWindowsDesktop}
             isDesktop={isDesktop}
+            // 手机端左上角空间有限且已有注入的抽屉开关按钮，任务前进/后退在手机上
+            // 用处极小（导航走抽屉里的任务列表），复用为闭源移动端准备的隐藏开关。
+            hideTaskNavigationButtons={!isDesktop}
             isSidebarVisible={isSidebarVisible}
             updateReadyVersion={updateReadyVersion}
             updateState={updateState}

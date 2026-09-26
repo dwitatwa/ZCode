@@ -146,7 +146,169 @@
         color: #ffffff;
       }
     </style>
-  </head>
+    <style id="zcode-mobile-patch">
+    /* 手机端布局补丁 v2（破坏性移动布局）：OSS web 客户端没有手机壳层（闭源 /remote/v3
+       未开源），桌面双栏布局在小屏上挤压重叠。本补丁在窄视口下整体接管布局：
+       1) 侧栏脱离文档流，变成左侧抽屉（默认收起），由注入的悬浮按钮开合；
+       2) 内容区全宽满屏，去掉桌面圆角卡片内嵌样式；
+       3) 放开所有面板最小宽度并阻止横向溢出。
+       若上游后续提供手机布局，可移除本补丁与下方注入脚本。 */
+    @media (max-width: 820px) {
+      /* 侧栏 → 抽屉 */
+      [data-workspace-sidebar-panel] {
+        position: fixed !important;
+        top: 0 !important;
+        bottom: 0 !important;
+        left: 0 !important;
+        width: min(84vw, 340px) !important;
+        min-width: 0 !important;
+        max-width: 84vw !important;
+        flex: 0 0 auto !important;
+        z-index: 60;
+        background: var(--color-background, #161616);
+        box-shadow: 0 0 48px rgb(0 0 0 / 0.55);
+        transform: translateX(-105%);
+        transition: transform 0.2s ease-out;
+        /* 可见性完全由抽屉开合控制，覆盖 React 的 opacity 隐藏，
+           避免侧栏内部折叠按钮和悬浮按钮状态打架。 */
+        opacity: 1 !important;
+      }
+      body.zcode-mobile-nav-open [data-workspace-sidebar-panel] {
+        transform: translateX(0);
+      }
+      /* 抽屉打开时的遮罩：点击空白处关闭（脚本里用委托处理） */
+      body.zcode-mobile-nav-open::after {
+        content: "";
+        position: fixed;
+        inset: 0;
+        z-index: 50;
+        background: rgb(0 0 0 / 0.45);
+      }
+      [data-workspace-sidebar-panel] + [role="separator"] {
+        display: none !important;
+      }
+
+      /* 内容区 → 全宽满屏 */
+      [data-workspace-shell] {
+        position: relative;
+      }
+      [data-workspace-shell] > #content {
+        min-width: 0 !important;
+        width: 100% !important;
+        flex: 1 1 100% !important;
+      }
+      [data-workspace-shell] [data-panel] {
+        min-width: 0 !important;
+        max-width: 100%;
+      }
+      /* 去掉桌面面板的圆角卡片内嵌，内容贴边 */
+      [data-workspace-conversation-frame="true"] {
+        border-radius: 0 !important;
+        border: none !important;
+      }
+
+      /* 草稿页推荐 Prompt 行：w-max 永不换行（实测 560px 宽），窄屏内改横向滚动 */
+      [data-v4-draft-suggested-prompts-group] {
+        max-width: calc(100vw - 32px) !important;
+        overflow-x: auto !important;
+        scrollbar-width: none;
+      }
+      [data-v4-draft-suggested-prompts-group]::-webkit-scrollbar {
+        display: none;
+      }
+      /* 空的右侧共享槽位（code viewer / browser）在手机上只剩 2px 边框残迹，直接隐藏 */
+      [data-workspace-side-frame] {
+        display: none !important;
+      }
+
+      html,
+      body {
+        overflow-x: hidden !important;
+      }
+    }
+
+    /* 悬浮导航按钮（仅手机视口显示），由下方注入脚本创建。
+       位置回到左上角：任务前进/后退按钮已在移动端隐藏（hideTaskNavigationButtons），
+       顶部工具组整体右移为本按钮让位。 */
+    #zcode-mobile-nav-toggle {
+      display: none;
+    }
+    @media (max-width: 820px) {
+      #zcode-mobile-nav-toggle {
+        display: flex !important;
+        position: fixed;
+        top: calc(9px + env(safe-area-inset-top, 0px));
+        left: calc(10px + env(safe-area-inset-left, 0px));
+        z-index: 70;
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        height: 40px;
+        padding: 0;
+        border: 1px solid var(--color-border, #2a2a2a);
+        border-radius: 10px;
+        background: var(--color-surface, #1c1c1c);
+        color: var(--color-foreground, #e5e5e5);
+        cursor: pointer;
+      }
+      /* 顶部工具组（新建任务等）整体右移，给悬浮按钮让位 */
+      [data-desktop-top-overlay] {
+        left: 52px !important;
+      }
+      /* 任务视图 header 的工作区/任务 chip 同样右移，避免被悬浮按钮盖住 */
+      [data-testid="workspace-path"] {
+        margin-left: 52px !important;
+      }
+      /* 手机上打开的第二个会话/运行 pane（如点击运行中的 subagent）→
+         全屏覆盖层（顶部 48px 让 header 露出，其关闭/固定控件与 ☰ 仍可操作）。
+         主会话因 overlay 脱离文档流自动恢复全宽。pane 未挂载时本规则无副作用。 */
+      [data-testid^="v4-pane-shell-"]:not([data-testid="v4-pane-shell-workspace-main"]) {
+        position: fixed !important;
+        inset: 48px 0 0 0 !important;
+        z-index: 45;
+        width: 100vw !important;
+        background: var(--color-background, #161616);
+      }
+    }
+  </style>
+  <script>
+    // 手机端导航抽屉开关（配合上方 zcode-mobile-patch 样式使用）。
+    // React 只管理 #root，挂到 body 上的按钮不会被框架回收。
+    (function () {
+      function mount() {
+        if (document.getElementById("zcode-mobile-nav-toggle")) return;
+        var btn = document.createElement("button");
+        btn.id = "zcode-mobile-nav-toggle";
+        btn.type = "button";
+        btn.setAttribute("aria-label", "Toggle navigation");
+        btn.setAttribute("aria-controls", "sidebar");
+        btn.innerHTML =
+          '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>';
+        btn.addEventListener("click", function () {
+          document.body.classList.toggle("zcode-mobile-nav-open");
+        });
+        // 点击遮罩（抽屉与按钮以外的区域）关闭抽屉
+        document.addEventListener("click", function (event) {
+          if (!document.body.classList.contains("zcode-mobile-nav-open")) return;
+          var sidebar = document.querySelector("[data-workspace-sidebar-panel]");
+          if (sidebar && sidebar.contains(event.target)) return;
+          if (btn.contains(event.target)) return;
+          document.body.classList.remove("zcode-mobile-nav-open");
+        });
+        // 测试钩子：?zcode-nav-open=1 直接以抽屉打开状态启动
+        if (new URLSearchParams(window.location.search).get("zcode-nav-open") === "1") {
+          document.body.classList.add("zcode-mobile-nav-open");
+        }
+        document.body.appendChild(btn);
+      }
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", mount);
+      } else {
+        mount();
+      }
+    })();
+  </script>
+</head>
   <body>
     <div id="root">
       <!-- 远程控制跨 workspace 时会整页跳转；在 JS 入口执行前先给出 loading 壳，避免出现白屏空档。-->
