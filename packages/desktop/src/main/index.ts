@@ -2012,8 +2012,11 @@ app.whenReady().then(async () => {
   // 启动自动更新检查（后台执行，不阻塞主界面）
   // Preview 身份无论连接哪个后端都不自动更新：stable feed 上只分发正式 ZCode 安装包，
   // 不向 Preview 渠道提供更新。
+  // 自构建安全修改：禁用官方自动更新源。官方闭源包更新后可能引入已移除的快照上传等行为，
+  // 自构建产物必须通过拉取源码重新构建来升级，而不是从官方 CDN 拉取二进制覆盖。
+  // 复用 autoUpdaterDisabledForProductFlavor 内置关闭路径，同时拦截轮询与手动检查更新。
   void initAutoUpdater({
-    enabled: ZCODE_PRODUCT_FLAVOR === "production",
+    enabled: false,
     onBeforeQuitAndInstall: async () => {
       notifyStabilityLifecycle("update_install");
       await prepareAppQuit("auto-update quitAndInstall", "update-install");
