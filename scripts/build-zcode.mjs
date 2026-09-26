@@ -100,9 +100,14 @@ function commandText(command, args) {
 
 function run(command, args, options = {}) {
   console.log(`[zcode] ${commandText(command, args)}`);
+  // Bugfix: Windows 下 pnpm 是 pnpm.CMD/pnpm.ps1 shim，Node spawnSync 无法直接执行
+  // （报 spawnSync pnpm ENOENT，Node ≥18 还会因 CVE-2024-27980 对 .cmd 拒绝执行）。
+  // 修复依据：在 win32 上加 shell:true 交给 cmd.exe 按 PATHEXT 解析；
+  // 本脚本所有 run() 参数均为无空格、无 shell 元字符的字面量，shell 拼接安全。
   const result = spawnSync(command, args, {
     cwd: root,
     stdio: "inherit",
+    ...(process.platform === "win32" ? { shell: true } : {}),
     ...options,
   });
   if (result.error) {
