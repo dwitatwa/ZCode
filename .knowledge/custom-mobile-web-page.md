@@ -1,22 +1,30 @@
 id: custom-mobile-web-page
 type: pattern
-title: Custom /mobile.html phone page — thin client over existing RPC services
+title: Custom /mobile.html phone page — three screens (Explorer / Chat / Info) over existing RPC services
 status: active
-claim: The self-hosted web server ships a dedicated custom mobile page at `/mobile.html` (built as a second vite entry in `packages/web`), designed to be freely customized by the fork owner instead of patching the desktop shell. It is a thin client: `connectViaWebSocket` → `IServiceAccessor.zcodeTaskService` only — `listTasks` (8s poll), `getTaskSnapshot` (3s poll while viewing, persisted snapshot not live v4 streaming), `sendPrompt` / `stopGeneration` (clientMode `web-remote-replayable`, clientLabel `zcode-mobile`), `createTask`. Auth: open the token link once (HttpOnly cookie covers all paths) or pass `?token=` which is forwarded to the WS handshake. v1 limits: assistant markdown rendered raw, no attachments/diff/terminal/workflow panes — those remain available via the full desktop UI with its CSS mobile takeover (see related). The full-UI CSS mobile takeover (drawer + injected ☰ toggle + hidden task nav + second-pane fullscreen overlay) lives inline in `packages/web/index.html` and stays as the fallback surface.
+claim: The self-hosted web server ships a dedicated custom mobile page at `/mobile.html` (second vite entry in `packages/web`), freely customizable by the fork owner. v2 structure: bottom tab bar with three persistent screens (display-switched, so scroll + composer draft survive tab changes) — Explorer (workspace chips from server-info `workspaces[]`, task list, create, archive/unarchive/delete with confirm sheets, archived section with `listArchivedTasks`/`deleteArchivedTasks`), Chat (snapshot-polled conversation + composer chips Access/Model/Thinking), Info (context meter, cache hit-rate, `getTaskTokenUsage` cumulative, `listSessionSubagents`, `conversationWorkflowRunsV4`, plan/background jobs/diagnostics). All composer data comes from snapshot `configOptions` server projection (model option id `model` entries carry `modelProviderId`/`modelThoughtLevels`/`modelDefaultThoughtLevel`; `thought_level` option carries per-model levels); `parseModelPickerValue` (`@zcode/shared/model-selection`) turns entry values back into `{providerId, modelId}`. Per-submission draft semantics match desktop: `sendPrompt` now accepts `mode` (build/edit/plan/yolo, facade addition threaded into v4 `sendText` payload) and `modelSelection.options.reasoningLevel`. `taskId` === agent `sessionId` (zcode-task-types-core) so Info-screen v4 queries call it directly with the task id.
 scope.paths:
   - packages/web/mobile.html
   - packages/web/src/mobile/main.tsx
+  - packages/web/src/mobile/lib/connection.ts
+  - packages/web/src/mobile/lib/catalog.ts
+  - packages/web/src/mobile/lib/types.ts
+  - packages/web/src/mobile/screens/ExplorerScreen.tsx
+  - packages/web/src/mobile/screens/ChatScreen.tsx
+  - packages/web/src/mobile/screens/InfoScreen.tsx
+  - packages/web/src/mobile/components/Sheet.tsx
   - packages/web/vite.config.ts
-  - packages/web/index.html
+  - packages/services/src/session/zcodeTaskService.ts
+  - packages/services/src/zcode-agent/zcodeTaskServiceAdapter.ts
 evidence:
-  - Entry + app: `packages/web/mobile.html` (dark theme tokens, safe-area insets) and `packages/web/src/mobile/main.tsx` (~330 lines, React + `connectViaWebSocket` from `@zcode/client`).
-  - Multi-page build: `packages/web/vite.config.ts` `build.rollupOptions.input` has `main` + `mobile`; `pnpm --filter @zcode/web build` emits both at dist root.
-  - Static serving: `packages/server/src/http.ts` `resolveStaticFile()` — unknown paths fall back to index.html only when `isStaticFallbackAllowed`; `/mobile.html` is a real file so no server change was needed.
-  - WS auth accepts query token: `packages/server/src/http.ts` `hasValidLiteToken()` accepts `?token=` and sets an HttpOnly cookie; the mobile page forwards its own `?token=` to the WS URL and caches it in sessionStorage.
-  - API shapes verified against source: `packages/services/src/session/zcodeTaskService.ts` (`sendPrompt` has NO workspacePath — task is bound at create; `stopGeneration`/`createTask`/`getTaskSnapshot` DO take workspacePath/workspaceIdentity), `packages/shared/src/zcode-task-types.ts` (`ZCodeTaskCreateResult extends ZCodeTaskMeta`), `packages/shared/src/zcode-task-types-core.ts` (`ZCodePersistedMessage` with `parts` of content/thought/tool-call).
-  - `packages/web/package.json` gained `@zcode/services` (type-only usage: `IServiceAccessor`, `IZCodeTaskService`); note the file must stay BOM-free — PostCSS config loading fails on a UTF-8 BOM in package.json.
-  - Verified 2026-09-26: `pnpm typecheck` clean; headless Chrome at 390px renders task list (2 rows: title/status/relative time) and chat view (user/assistant bubbles, tool lines, collapsible thought); server logs show `getTaskSnapshot` polling returning the expected messages.
-  - NOT yet exercised end-to-end: `sendPrompt` and `createTask` from the phone (implemented and typechecked, no live send test); snapshot polling shows persisted state, so in-flight streaming text lags a few seconds vs the desktop UI.
+  - Screens: `ExplorerScreen` uses existing `archiveTask`/`unarchiveTask`/`deleteTask`/`deleteArchivedTask`/`deleteArchivedTasks`/`listArchivedTasks` (zcodeTaskService.ts:637-655,684-695) — no service change was needed for Explorer.
+  - Facade addition (this fork): `sendPrompt` params now include `mode?: CommandPayloadMap["sendText"]["mode"]` (zcodeTaskService.ts:264), threaded in `sendPromptToAgent` (zcodeTaskServiceAdapter.ts:391,457) into the v4 `sendText` payload whose zod schema already had `mode: submissionModeSchema.optional()` (zcode-protocol-v4/command.ts:99). Legacy `session/send` fallback drops mode silently (acceptable).
+  - Secure-context fix: `crypto.randomUUID()` is undefined on `http://<tailscale-ip>:3030` (insecure origin); `newTraceId()` in `lib/connection.ts` falls back to a Math.random UUIDv4. The v1 page had this latent bug (sendPrompt was never live-tested from the phone).
+  - DEPLOYMENT: the running debug server does NOT serve `packages/web/dist` — the runner (`dist/zcode/debug/zcode/bin/zcode.mjs serve`) sets `ZCODE_WEB_STATIC_ROOT` to a COPY at `dist/zcode/debug/zcode/web`. After `pnpm --filter @zcode/web build`, sync: `rm -rf dist/zcode/debug/zcode/web && cp -r packages/web/dist dist/zcode/debug/zcode/web`. Static files serve from disk, so no server restart is needed for web-only changes.
+  - Probe technique (no token needed): start a second instance with known token — `PORT=<p> ZCODE_SERVER_AUTH_TOKEN=<t> ZCODE_WEB_STATIC_ROOT=<web root> ZCODE_SERVER_WORKSPACE=<ws> ZCODE_AGENT_SERVER_COMMAND=<node> ZCODE_AGENT_SERVER_ARGS_JSON='[<agent>/zcode.cjs,"app-server","--stdio"]' node dist/zcode/debug/zcode/server/entry-http.js`; cookie name is `zcode_lite_token` (http.ts:187).
+  - Verified 2026-09-26: root `pnpm typecheck` clean (`tsc -b` — REQUIRED after services edits: web resolves `@zcode/services` types via built declarations, so package-local tsc passes while web sees stale types until root build), `pnpm lint` 0/0 on touched files, `pnpm --filter @zcode/web build` ok, headless Chrome 390px renders tab bar (Explorer active; Chat/Info disabled without active task) + explorer empty state with zero console errors; `/api/*` 401 without token, 200 with `?token=` or `zcode_lite_token` cookie; static files open.
+  - NOT yet exercised end-to-end from a real phone: sendPrompt (with mode/modelSelection), createTask, archive/delete flows, Info-screen RPCs against a live task. Snapshot polling still shows persisted state (in-flight streaming lags a few seconds vs desktop).
+  - `packages/web/package.json` must stay BOM-free — PostCSS config loading fails on a UTF-8 BOM.
 confidence: high
 related:
   - mobile-remote-control-architecture
