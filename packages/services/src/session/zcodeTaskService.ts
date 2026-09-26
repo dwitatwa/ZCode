@@ -260,6 +260,8 @@ export interface IZCodeTaskService {
       modelSelection?: CommandPayloadMap["sendText"]["modelSelection"];
       /** 单次执行约束与动态鉴权；仅 idle start-now 接受，不进入普通队列。 */
       modelExecution?: CommandPayloadMap["sendText"]["modelExecution"];
+      /** 单次提交的协作模式（build/edit/plan/yolo）；对齐桌面 v4 sendText.mode 的草稿语义，不落任务配置。 */
+      mode?: CommandPayloadMap["sendText"]["mode"];
     } & ZCodeBackgroundTurnAttribution,
   ): Promise<void>;
 

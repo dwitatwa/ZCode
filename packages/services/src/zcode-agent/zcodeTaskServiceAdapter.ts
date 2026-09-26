@@ -388,6 +388,7 @@ export function createZCodeTaskServiceAdapter(
       logReason?: string;
       modelSelection?: CommandPayloadMap["sendText"]["modelSelection"];
       modelExecution?: CommandPayloadMap["sendText"]["modelExecution"];
+      mode?: CommandPayloadMap["sendText"]["mode"];
     } & ZCodeBackgroundTurnAttribution,
   ): Promise<void> {
     const startedAt = Date.now();
@@ -454,6 +455,7 @@ export function createZCodeTaskServiceAdapter(
               heldQueueDisposition: "keepQueueAndSend",
               ...(params.modelSelection ? { modelSelection: params.modelSelection } : {}),
               ...(params.modelExecution ? { modelExecution: params.modelExecution } : {}),
+              ...(params.mode ? { mode: params.mode } : {}),
               ...turnAttributionOf(params),
               ...(params.botDeliveryTarget ? { botDeliveryTarget: params.botDeliveryTarget } : {}),
               ...(promptToolDenylist ? { toolDisallowlist: promptToolDenylist } : {}),
@@ -1936,6 +1938,7 @@ export function createZCodeTaskServiceAdapter(
         clientMode: params.clientMode,
         modelSelection: params.modelSelection,
         modelExecution: params.modelExecution,
+        mode: params.mode,
       });
     },
 
