@@ -20,4 +20,5 @@ confidence: high
 related:
   - zcode-silent-snapshot-upload-audit
   - self-built-desktop-security-rules
+  - custom-mobile-web-page
 last_verified: 2026-09-26
