@@ -13,6 +13,7 @@ import type {
   ZCodeAgentAttachmentTerminalParams,
 } from "@zcode/services";
 import { logger } from "@/logger.js";
+import { sha256Hex } from "@/lib/sha256.js";
 
 /** 384KiB 可被 3 整除，除末片外 base64 不含 padding；同时为两层 envelope 留足空间。 */
 const ATTACHMENT_UPLOAD_CHUNK_BYTES = 384 * 1024;
@@ -87,13 +88,11 @@ function encodeBase64(bytes: Uint8Array): string {
 }
 
 async function checksum(bytes: Uint8Array): Promise<string> {
-  if (!globalThis.crypto?.subtle) throw new Error("fault.attachment.checksumUnavailable");
-  // WebCrypto 的 BufferSource 要求 ArrayBuffer；复制也避免调用期间底层 view 被复用。
-  const digest = await globalThis.crypto.subtle.digest("SHA-256", Uint8Array.from(bytes).buffer);
-  const hex = [...new Uint8Array(digest)]
-    .map((value) => value.toString(16).padStart(2, "0"))
-    .join("");
-  return `sha256:${hex}`;
+  // 非安全上下文（http://<lan-ip>:port 远程访问）下浏览器不暴露 crypto.subtle，
+  // 此前在这里直接抛 fault.attachment.checksumUnavailable，导致该场景下每张图片
+  // 上传在事务第一步就必败。协议 begin/commit 均强制 sha256 校验和无法省略，
+  // 故改用 sha256Hex 的本地回退实现（修复依据见 lib/sha256.ts 顶部说明）。
+  return `sha256:${await sha256Hex(bytes)}`;
 }
 
 function createUploadId(): string {

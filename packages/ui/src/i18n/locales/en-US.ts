@@ -1747,6 +1747,25 @@ const enUS: Record<string, string> = {
   "webRemoteControl.botChannel.telegram.description": "Open this workspace from Telegram.",
   "webRemoteControl.botChannel.configure": "Configure in bot channels",
   "webRemoteControl.botChannel.manageBots": "Manage bots",
+  "webRemoteControl.direct.title": "Direct connection",
+  "webRemoteControl.direct.description":
+    "Start a local listener and scan the QR code from your phone to open this workspace without any chat channel.",
+  "webRemoteControl.direct.bindMode": "Network binding",
+  "webRemoteControl.direct.bindMode.loopback": "This device only",
+  "webRemoteControl.direct.bindMode.loopbackDescription":
+    "Listen on 127.0.0.1. Use a tunnel such as Tailscale to reach it.",
+  "webRemoteControl.direct.bindMode.tailnet": "Tailscale network",
+  "webRemoteControl.direct.bindMode.tailnetDescription":
+    "Listen on the Tailscale interface so your phone can connect directly.",
+  "webRemoteControl.direct.start": "Start direct connection",
+  "webRemoteControl.direct.stop": "Stop direct connection",
+  "webRemoteControl.direct.starting": "Starting…",
+  "webRemoteControl.direct.scanHint": "Scan this QR code with your phone to pair.",
+  "webRemoteControl.direct.pairingUrl": "Pairing URL",
+  "webRemoteControl.direct.copyLink": "Copy link",
+  "webRemoteControl.direct.copied": "Copied",
+  "webRemoteControl.direct.connectedClients": "Connected devices: {count}",
+  "webRemoteControl.direct.unavailable": "Direct connection is unavailable in this build.",
   "remote.title": "Connect remote environment",
   "remote.description":
     "Connect to a remote workspace over SSH, Server, WSL, or Docker, then choose a directory in the current window.",

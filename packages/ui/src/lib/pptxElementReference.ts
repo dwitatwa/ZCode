@@ -1,4 +1,5 @@
 import type { PresentationPageElement } from "@/presentation/types.js";
+import { sha256Hex } from "@/lib/sha256.js";
 
 export const PPTX_ELEMENT_REFERENCE_ADD_TO_CHAT_EVENT = "zcode:pptx-element-reference-add-to-chat";
 const PPTX_ELEMENT_COMMENT_BLOCK_TITLE = "# Presentation element comments:";
@@ -143,11 +144,9 @@ function createPptxElementReferenceId() {
 
 export async function sha256Fingerprint(value: ArrayBuffer | string): Promise<string> {
   const bytes = typeof value === "string" ? new TextEncoder().encode(value) : new Uint8Array(value);
-  const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes);
-  const hex = [...new Uint8Array(digest)]
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
-  return `sha256:${hex}`;
+  // 非安全上下文（http 远程访问）下 crypto.subtle 不存在，此前这里会直接抛 TypeError；
+  // 改用带本地回退的 sha256Hex（见 lib/sha256.ts 顶部说明）。
+  return `sha256:${await sha256Hex(bytes)}`;
 }
 
 export async function createPptxElementReference(options: {

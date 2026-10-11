@@ -1627,6 +1627,25 @@ const zhCN: Record<string, string> = {
   "webRemoteControl.botChannel.telegram.description": "从 Telegram 打开这个工作区。",
   "webRemoteControl.botChannel.configure": "去 Bot Channels 配置",
   "webRemoteControl.botChannel.manageBots": "机器人管理",
+  "webRemoteControl.direct.title": "直连远控",
+  "webRemoteControl.direct.description":
+    "启动本机监听并生成二维码,手机扫码即可直接打开当前工作区,无需任何聊天渠道。",
+  "webRemoteControl.direct.bindMode": "网络绑定",
+  "webRemoteControl.direct.bindMode.loopback": "仅本机",
+  "webRemoteControl.direct.bindMode.loopbackDescription":
+    "监听 127.0.0.1,可通过 Tailscale 等隧道访问。",
+  "webRemoteControl.direct.bindMode.tailnet": "Tailscale 网络",
+  "webRemoteControl.direct.bindMode.tailnetDescription":
+    "监听 Tailscale 网卡地址,手机可直接连接。",
+  "webRemoteControl.direct.start": "启动直连",
+  "webRemoteControl.direct.stop": "停止直连",
+  "webRemoteControl.direct.starting": "启动中…",
+  "webRemoteControl.direct.scanHint": "用手机扫描二维码完成配对。",
+  "webRemoteControl.direct.pairingUrl": "配对链接",
+  "webRemoteControl.direct.copyLink": "复制链接",
+  "webRemoteControl.direct.copied": "已复制",
+  "webRemoteControl.direct.connectedClients": "已连接设备:{count}",
+  "webRemoteControl.direct.unavailable": "当前版本不支持直连远控。",
   "remote.title": "连接远程环境",
   "remote.description":
     "通过 SSH、Server、WSL 或 Docker 连接远程工作区，并在当前窗口中继续选择目录。",
