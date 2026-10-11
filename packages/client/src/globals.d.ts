@@ -46,6 +46,8 @@ import type {
   UpdateCheckResultPayload,
   UpdateStatePayload,
   OpenInEditorOptions,
+  MobileDirectConnectionStatus,
+  StartMobileDirectConnectionRequest,
 } from "@zcode/shared";
 
 /**
@@ -320,6 +322,18 @@ declare global {
       getSystemLocale?(): Promise<Locale>;
       /** 同步标题栏亮暗色 */
       setTitleBarTheme(theme: DesktopTitleBarTheme): Promise<void>;
+      /** 启动直连移动远控监听,返回配对信息(URL/二维码地址) */
+      startMobileDirectConnection?(
+        request?: StartMobileDirectConnectionRequest,
+      ): Promise<MobileDirectConnectionStatus>;
+      /** 停止直连移动远控监听 */
+      stopMobileDirectConnection?(): Promise<MobileDirectConnectionStatus>;
+      /** 查询直连移动远控当前状态 */
+      getMobileDirectConnectionStatus?(): Promise<MobileDirectConnectionStatus>;
+      /** 订阅直连移动远控状态变化,返回 disposer */
+      onMobileDirectConnectionChanged?(
+        callback: (status: MobileDirectConnectionStatus) => void,
+      ): () => void;
     };
   }
 }

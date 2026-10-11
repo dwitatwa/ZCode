@@ -62,6 +62,10 @@ import type {
 } from "./platform.js";
 import type { BrowserViewportSize } from "./browser-use/command-metadata.js";
 import type {
+  MobileDirectConnectionStatus,
+  StartMobileDirectConnectionRequest,
+} from "./mobile-direct-connection.js";
+import type {
   CuaAccessibilitySettingsResult,
   OpenCuaPermissionOnboardingOptions,
   PrepareCuaHelperPermissionDragResult,
@@ -426,6 +430,14 @@ export const PlatformChannels = {
   MigrateLegacyCommonMcp: "zcode:migrate-legacy-common-mcp",
   /** Renderer → Main：获取当前设备的稳定标识符（deviceMid） */
   GetDeviceId: "zcode:get-device-id",
+  /** Renderer → Main:启动直连移动远控监听,返回配对信息(URL/二维码地址) */
+  StartMobileDirectConnection: "zcode:start-mobile-direct-connection",
+  /** Renderer → Main:停止直连移动远控监听 */
+  StopMobileDirectConnection: "zcode:stop-mobile-direct-connection",
+  /** Renderer → Main:查询直连移动远控当前状态 */
+  GetMobileDirectConnectionStatus: "zcode:get-mobile-direct-connection-status",
+  /** Main → Renderer:直连移动远控状态变化 */
+  MobileDirectConnectionChanged: "zcode:mobile-direct-connection-changed",
 } as const;
 
 export type PlatformChannelName = (typeof PlatformChannels)[keyof typeof PlatformChannels];
@@ -1165,6 +1177,22 @@ export interface PlatformChannelMap {
   };
   [PlatformChannels.SetTitleBarTheme]: {
     request: DesktopTitleBarTheme;
+    response: void;
+  };
+  [PlatformChannels.StartMobileDirectConnection]: {
+    request: StartMobileDirectConnectionRequest;
+    response: MobileDirectConnectionStatus;
+  };
+  [PlatformChannels.StopMobileDirectConnection]: {
+    request: void;
+    response: MobileDirectConnectionStatus;
+  };
+  [PlatformChannels.GetMobileDirectConnectionStatus]: {
+    request: void;
+    response: MobileDirectConnectionStatus;
+  };
+  [PlatformChannels.MobileDirectConnectionChanged]: {
+    request: MobileDirectConnectionStatus;
     response: void;
   };
 }

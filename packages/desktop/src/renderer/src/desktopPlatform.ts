@@ -1,7 +1,17 @@
 import { recordArmsCustomEventForE2E } from "@zcode/ui";
-import { DesktopCommandIds, buildLocalMediaPreviewUrl, type IPlatformService } from "@zcode/shared";
+import {
+  DesktopCommandIds,
+  buildLocalMediaPreviewUrl,
+  type IPlatformService,
+  type MobileDirectConnectionStatus,
+} from "@zcode/shared";
 
 import { desktopBrowserPlatformBridge } from "./desktopBrowserPlatformBridge.js";
+
+/** 直连远控不可用时的保守状态(IPC 缺失或未注册)。 */
+function createStoppedStatus(): MobileDirectConnectionStatus {
+  return { state: "stopped", bindMode: "loopback", connectedClients: 0 };
+}
 
 export function createDesktopPlatform(options: {
   isLocalDevelopmentRuntime: boolean;
@@ -38,6 +48,19 @@ export function createDesktopPlatform(options: {
     openFeedback: () => window.zcode.executeDesktopCommand(DesktopCommandIds.OpenFeedback),
     openCommunity: () => window.zcode.executeDesktopCommand(DesktopCommandIds.OpenCommunity),
     canOpenCommunity: (locale) => window.zcode.canOpenCommunity(locale),
+    startMobileDirectConnection: window.zcode.startMobileDirectConnection
+      ? (request) => window.zcode.startMobileDirectConnection?.(request) ?? Promise.resolve(createStoppedStatus())
+      : undefined,
+    stopMobileDirectConnection: window.zcode.stopMobileDirectConnection
+      ? () => window.zcode.stopMobileDirectConnection?.() ?? Promise.resolve(createStoppedStatus())
+      : undefined,
+    getMobileDirectConnectionStatus: window.zcode.getMobileDirectConnectionStatus
+      ? () =>
+          window.zcode.getMobileDirectConnectionStatus?.() ?? Promise.resolve(createStoppedStatus())
+      : undefined,
+    onMobileDirectConnectionChanged: window.zcode.onMobileDirectConnectionChanged
+      ? (handler) => window.zcode.onMobileDirectConnectionChanged?.(handler) ?? (() => {})
+      : undefined,
     openInFileManager: (path) => window.zcode.openInFileManager(path),
     openExternalFile: (path) => window.zcode.openExternalFile(path),
     openCuaPermissionOnboarding: window.zcode.openCuaPermissionOnboarding

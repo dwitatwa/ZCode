@@ -117,6 +117,12 @@ const requiredRuntimeModules = [
   "asn1",
   "bcrypt-pbkdf",
   "tweetnacl",
+  // 直连移动远控在主进程内起 Hono HTTP/WS 监听。hono 三件套对 desktop main 是外部导入,
+  // 必须随包进 app.asar,否则安装包启动即 ERR_MODULE_NOT_FOUND。与 electron-builder 注入
+  // 闭包同口径校验,防止只依赖 @zcode/server 传递依赖的脆弱链路回归。
+  "hono",
+  "@hono/node-server",
+  "@hono/node-ws",
 ];
 const electronBuilderRetryCount = 3;
 const electronBuilderRetryDelayMs = 5_000;

@@ -84,6 +84,10 @@ import {
   formatZCodeRendererProcessName,
   shouldEnableE2ETestBridge,
 } from "@zcode/shared";
+import type {
+  MobileDirectConnectionStatus,
+  StartMobileDirectConnectionRequest,
+} from "@zcode/shared";
 import { createOAuthCallbackHandler } from "./oauthCallbackBridge.js";
 
 if (shouldEnableE2ETestBridge(process.env)) {
@@ -821,6 +825,23 @@ contextBridge.exposeInMainWorld("zcode", {
     ipcRenderer.invoke(PlatformChannels.SetTitleBarTheme, theme),
   /** 获取桌面端设备标识符（deviceMid） */
   getDeviceId: () => ipcRenderer.invoke(PlatformChannels.GetDeviceId),
+  /** 启动直连移动远控监听,返回配对信息(URL/二维码链接) */
+  startMobileDirectConnection: (request?: StartMobileDirectConnectionRequest) =>
+    ipcRenderer.invoke(PlatformChannels.StartMobileDirectConnection, request ?? {}),
+  /** 停止直连移动远控监听 */
+  stopMobileDirectConnection: () =>
+    ipcRenderer.invoke(PlatformChannels.StopMobileDirectConnection),
+  /** 查询直连移动远控当前状态 */
+  getMobileDirectConnectionStatus: () =>
+    ipcRenderer.invoke(PlatformChannels.GetMobileDirectConnectionStatus),
+  /** 订阅直连移动远控状态变化,返回 disposer */
+  onMobileDirectConnectionChanged: (callback: (status: MobileDirectConnectionStatus) => void) => {
+    const handler = (_event: unknown, payload: unknown) =>
+      callback(payload as MobileDirectConnectionStatus);
+    ipcRenderer.on(PlatformChannels.MobileDirectConnectionChanged, handler);
+    return () =>
+      ipcRenderer.removeListener(PlatformChannels.MobileDirectConnectionChanged, handler);
+  },
 });
 
 /**

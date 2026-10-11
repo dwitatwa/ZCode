@@ -152,6 +152,13 @@ const REQUIRED_ASAR_RUNTIME_MODULES = [
   // 已在线上触发安装包启动即报 Cannot find module 'ms'（Require stack: debug/src/common.js），
   // 自动更新链路直接崩。ms 是叶子包，显式注入即可让 debug 在 app.asar 内稳定解析。
   "ms",
+  // 直连移动远控的 HTTP/WS 监听在主进程内起 Hono。desktop main 通过 tsup 内联
+  // @zcode/server,但 hono 三件套会被保留为外部导入(与其余 external 依赖一致);
+  // 它们此前只经由 @zcode/server 的传递依赖存在,一旦上游移除就会让安装包启动即
+  // ERR_MODULE_NOT_FOUND。这里显式作为闭包根注入,递归带齐其运行时依赖,锁死该链路。
+  "hono",
+  "@hono/node-server",
+  "@hono/node-ws",
 ];
 // pacman 依赖必须使用 Arch 官方仓库中的包名。electron-builder 的历史默认集合包含
 // 已移除的 libappindicator-gtk3/http-parser，且缺少 Electron 实际需要的运行库；显式
@@ -627,6 +634,15 @@ export default {
       // 桌面端内置的是 agent 的 JS bundle（glm/zcode.cjs，由 prepare:agent-bundle 生成），
       // Host 进程用 app 自带的 Electron Node runtime（ELECTRON_RUN_AS_NODE）执行 `zcode.cjs app-server --stdio`，
       // 不再随包内置独立 Node 二进制。远端 SSH/WSL 仍走原生二进制（无 Electron）。
+      from: resolve(workspaceRoot, "packages", "web", "dist"),
+      to: "mobile-web",
+      filter: ["**/*", "!**/*.map"],
+    },
+    {
+      // agent 运行时资产,打包到 resources/glm。
+      // 桌面端内置的是 agent 的 JS bundle(glm/zcode.cjs,由 prepare:agent-bundle 生成),
+      // Host 进程用 app 自带的 Electron Node runtime(ELECTRON_RUN_AS_NODE)执行 `zcode.cjs app-server --stdio`,
+      // 不再随包内置独立 Node 二进制。远端 SSH/WSL 仍走原生二进制(无 Electron)。
       from: `bundled-agents/${targetPlatform.key}/glm`,
       to: "glm",
       filter: ["**/*", "!**/*.map"],

@@ -42,8 +42,19 @@ export function createDesktopProductionBuildPlan({ cwd, baseEnv = process.env })
     ...baseEnv,
     NODE_ENV: "production",
   };
+  // 直连移动远控的静态资源来自 packages/web/dist(mobile.html),由 electron-builder
+  // 打进 resources/mobile-web。desktop 自身构建不产出它,所以这里先显式构建 @zcode/web,
+  // 避免把缺失或过期的移动端界面封进安装包。
+  const workspaceRoot = resolve(cwd, "..", "..");
 
   return [
+    {
+      label: "mobile web bundle",
+      command: "pnpm",
+      args: ["--filter", "@zcode/web", "build"],
+      cwd: workspaceRoot,
+      env,
+    },
     {
       label: "desktop production bundles",
       parallel: [

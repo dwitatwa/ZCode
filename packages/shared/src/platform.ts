@@ -979,4 +979,28 @@ export interface IPlatformService {
    *   抗浏览器/网络/语言/时区变化，换手机才会变
    */
   getDeviceId(): string;
+
+  /**
+   * 启动「直连移动远控」:在 Desktop Main 内起一个可达 HTTP+WS 监听,让手机浏览器
+   * attachment 到当前窗口已有 Host(项目/任务/会话完全一致),并返回配对二维码链接。
+   * 仅 Desktop 实现;Web/手机端不实现。
+   */
+  startMobileDirectConnection?(
+    request?: import("./mobile-direct-connection.js").StartMobileDirectConnectionRequest,
+  ): Promise<import("./mobile-direct-connection.js").MobileDirectConnectionStatus>;
+
+  /** 停止直连移动远控监听并使其 token 失效。仅 Desktop 实现。 */
+  stopMobileDirectConnection?(): Promise<
+    import("./mobile-direct-connection.js").MobileDirectConnectionStatus
+  >;
+
+  /** 查询直连移动远控当前状态。仅 Desktop 实现。 */
+  getMobileDirectConnectionStatus?(): Promise<
+    import("./mobile-direct-connection.js").MobileDirectConnectionStatus
+  >;
+
+  /** 订阅直连移动远控状态变化,返回 disposer。仅 Desktop 实现。 */
+  onMobileDirectConnectionChanged?(
+    handler: (status: import("./mobile-direct-connection.js").MobileDirectConnectionStatus) => void,
+  ): () => void;
 }

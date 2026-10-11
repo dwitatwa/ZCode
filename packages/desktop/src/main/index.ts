@@ -188,6 +188,10 @@ import {
 } from "./desktopDeepLinkUrl.js";
 import { createRemoteWorkspaceSessionManager } from "./desktopRemoteSessions.js";
 import {
+  createMobileDirectConnectionManager,
+  resolveDefaultMobileDistRoot,
+} from "./mobileDirectConnectionManager.js";
+import {
   reportRemoteConnectionStateChangedToArms,
   reportRemoteDisconnectToArms,
   stopRemoteUsageArmsPeriodicSampling,
@@ -789,6 +793,18 @@ const remoteSessionManager = createRemoteWorkspaceSessionManager({
 });
 
 const deviceMid = ensureDesktopDeviceMidSync();
+const mobileDirectConnectionManager = createMobileDirectConnectionManager({
+  windowHostProcessMap,
+  windowWorkspaceMap,
+  resolveMobileDistRoot: resolveDefaultMobileDistRoot,
+  onStatusChanged: (status) => {
+    for (const win of getApplicationWindowsExcludingCuaIndicator()) {
+      if (!win.isDestroyed()) {
+        win.webContents.send(PlatformChannels.MobileDirectConnectionChanged, status);
+      }
+    }
+  },
+});
 // 帮助配置是公开读取，不能复用下面附带账号鉴权的灰度响应缓存。
 const readHelpConfig = createDesktopHelpConfigReader({
   appVersion: ZCODE_VERSION || app.getVersion(),
@@ -2159,6 +2175,11 @@ app.whenReady().then(async () => {
     syncAppSettings: syncImmediateAppSettings,
     setShortcutRecordingActive,
     deviceMid,
+    mobileDirectConnection: {
+      start: (request) => mobileDirectConnectionManager.start(request),
+      stop: () => mobileDirectConnectionManager.stop(),
+      getStatus: () => mobileDirectConnectionManager.getStatus(),
+    },
   });
 
   disposeRendererActionTraceIpc = registerRendererActionTraceIpc({
@@ -2311,6 +2332,8 @@ app.on("browser-window-created", (_, win) => {
   win.on("closed", () => {
     browserScreenshotSurfaceCoordinator.handleWindowDestroyed(win.id);
     browserGuestManager.closeWindow(win.id);
+    // 直连监听归属启动它的窗口;窗口关闭即停,避免留下无人可用的端口与 token。
+    mobileDirectConnectionManager.handleWindowClosed(windowWebContentsId);
     windowWorkspaceMap.delete(win.id);
     windowTaskRealtimeHostIdMap.delete(win.id);
     if (windowUnreadCountMap.delete(win.id)) {

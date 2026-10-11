@@ -9,6 +9,7 @@ import {
   nonEmptyStringSchema,
   PlatformChannels,
   rendererLogPayloadSchema,
+  startMobileDirectConnectionRequestSchema,
   stringArraySchema,
   type DesktopCommandId,
   type ApplicationIconRequest,
@@ -18,6 +19,8 @@ import {
   type OpenInEditorOptions,
   type SaveCliMcpToUserDirectoryRequest,
   type CreateTempTextAttachmentRequest,
+  type MobileDirectConnectionStatus,
+  type StartMobileDirectConnectionRequest,
   type UpdateStatePayload,
   type WindowControlsOverlayReadyPayload,
 } from "@zcode/shared";
@@ -100,6 +103,12 @@ export function registerPlatformIpcHandlers(options: {
   reportBrowserScreenshotSurfaceReady?: ReportBrowserScreenshotSurfaceReady;
   /** Browser tab 关闭、挂起、恢复与跨重启 shell IPC。 */
   browserViewResidencyHandlers?: BrowserViewResidencyIpcHandlers;
+  /** 直连移动远控:启动/停止/查询。省略时相关 IPC 不注册(测试/无 UI 环境)。 */
+  mobileDirectConnection?: {
+    start: (request: StartMobileDirectConnectionRequest) => Promise<MobileDirectConnectionStatus>;
+    stop: () => Promise<MobileDirectConnectionStatus>;
+    getStatus: () => MobileDirectConnectionStatus;
+  };
 }) {
   ipcMain.handle(PlatformChannels.SelectDirectory, async () => {
     const result = await dialog.showOpenDialog({
@@ -385,6 +394,25 @@ export function registerPlatformIpcHandlers(options: {
     (_event, request: string | ApplicationIconRequest) => getApplicationIcon(request),
   );
   ipcMain.handle(PlatformChannels.GetDeviceId, () => options.deviceMid);
+  if (options.mobileDirectConnection) {
+    const mobileDirect = options.mobileDirectConnection;
+    ipcMain.handle(
+      PlatformChannels.StartMobileDirectConnection,
+      async (_event, request: unknown) => {
+        const parsed = startMobileDirectConnectionRequestSchema.safeParse(request ?? {});
+        if (!parsed.success) {
+          options.logger.warn(
+            "[mobile-direct] invalid start request:",
+            formatZodError(parsed.error),
+          );
+          return mobileDirect.getStatus();
+        }
+        return mobileDirect.start(parsed.data);
+      },
+    );
+    ipcMain.handle(PlatformChannels.StopMobileDirectConnection, () => mobileDirect.stop());
+    ipcMain.handle(PlatformChannels.GetMobileDirectConnectionStatus, () => mobileDirect.getStatus());
+  }
   ipcMain.handle(PlatformChannels.ExportLogs, () => exportLogs());
   ipcMain.handle(PlatformChannels.CaptureWindowScreenshot, async (event) => {
     const senderWindow = BrowserWindow.fromWebContents(event.sender);
