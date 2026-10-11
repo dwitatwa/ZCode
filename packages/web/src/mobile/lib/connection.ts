@@ -32,7 +32,14 @@ export const wsUrl = `${wsProtocol}//${window.location.host}/ws${
 }`;
 
 export async function fetchServerInfo(): Promise<MobileServerInfo> {
-  const res = await fetch("/api/server-info", { cache: "no-store" });
+  // /api/* 是受 token 保护的路径。只靠 URL 里的 ?token 种 HttpOnly cookie 再等下一次
+  // 请求带上是不够的:首次加载时 cookie 还没种下,这个请求会直接 401,导致 workspace
+  // 列表为空并显示 "No workspace configured on the server."。这里显式带上 token,
+  // 既保证首次就成功,也让服务端顺手把 cookie 种下供后续 WS 复用。
+  const url = token
+    ? `/api/server-info?token=${encodeURIComponent(token)}`
+    : "/api/server-info";
+  const res = await fetch(url, { cache: "no-store", credentials: "same-origin" });
   if (!res.ok) {
     throw new Error(`server-info HTTP ${res.status}`);
   }

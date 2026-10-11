@@ -1,164 +1,142 @@
 /**
- * Chat（Main）屏：快照轮询的会话视图 + 带三个选择器的 composer。
- * antd-mobile NavBar/TextArea/DotLoading/ActionSheet + lucide 图标。
- * Access / Model / Thinking 全部来自快照 configOptions 的服务端投影；
- * 草稿随 sendPrompt 提交（modelSelection.options.reasoningLevel + mode），不落任务配置。
+ * Chat 屏：活动时间线 + 底部单栏 composer。
+ *
+ * 数据来自 v4 会话投影（useConversationLive），与桌面同一链路：snapshot + delta，
+ * 文本/思考/工具行到达即渲染。旧版的 3s 快照轮询与流式事件过滤已移除 ——
+ * 那两条路一个太慢、一个把 agent_message_chunk 等事件直接丢掉。
  */
-import { useEffect, useRef, useState } from "react";
-import { ActionSheet, DotLoading, NavBar, TextArea, Toast } from "antd-mobile";
-import {
-  ArrowUp,
-  Brain,
-  ChevronDown,
-  Cpu,
-  Square,
-} from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronLeft, Lock } from "lucide-react";
 import type { IZCodeTaskService } from "@zcode/services";
-import type { ZCodePersistedMessage, ZCodeTaskMeta } from "@zcode/shared";
-import { parseModelPickerValue } from "@zcode/shared/model-selection";
-import {
-  ACCESS_MODES,
-  accessModeLabel,
-  findConfigOption,
-  groupModels,
-  modelEntries,
-  thoughtLabel,
-} from "../lib/catalog.js";
-import type { ComposerDraft, MobileTaskSnapshot } from "../lib/types.js";
+import type { ModelSelection, ZCodeConfigOption, ZCodeTaskMeta } from "@zcode/shared";
+import { timelineIsEmpty } from "../lib/timeline.js";
+import { buildTimelineFromRows, anyTurnRunning } from "../lib/projection.js";
+import { buildTimelineNav } from "../lib/navigation.js";
+import type { ComposerDraft } from "../lib/types.js";
 import { newTraceId } from "../lib/connection.js";
-import { GroupedOptionSheet } from "../components/Sheet.js";
+import { useToast } from "../components/Overlays.js";
+import { Composer, type SubmittableMode } from "../components/Composer.js";
+import { Timeline, turnAnchorId } from "../components/Timeline.js";
+import { MessageNav } from "../components/MessageNav.js";
+import type { ConversationLive } from "../lib/live.js";
 
-const SUBMITTABLE_MODES = ["build", "edit", "plan", "yolo"] as const;
-
-type SubmittableMode = (typeof SUBMITTABLE_MODES)[number];
-
-function normalizeMode(value: string | null | undefined): SubmittableMode {
-  return SUBMITTABLE_MODES.find((mode) => mode === value) ?? "build";
-}
-
-function MessageBubble({ message }: { message: ZCodePersistedMessage }) {
-  const isUser = message.role === "user";
-  const parts = Array.isArray(message.parts) ? message.parts : null;
-
-  const body =
-    parts && parts.length > 0 ? (
-      parts.map((part, index) => {
-        if (part.type === "thought") {
-          return (
-            <details key={index} className="thought">
-              <summary>thought</summary>
-              <div className="thought-body">{part.content}</div>
-            </details>
-          );
-        }
-        if (part.type === "tool-call") {
-          return (
-            <div key={index} className="tool-line">
-              ⚙ tool #{part.toolIndex}
-            </div>
-          );
-        }
-        return <p key={index}>{part.content}</p>;
-      })
-    ) : (
-      <p>{message.content}</p>
-    );
-
-  return (
-    <div className={`bubble-row ${isUser ? "user" : "assistant"}`}>
-      <div className={`bubble ${isUser ? "bubble-user" : "bubble-assistant"}`}>{body}</div>
-    </div>
-  );
-}
+const STICK_THRESHOLD_PX = 90;
 
 export function ChatScreen({
   service,
+  live,
   meta,
-  snapshot,
+  configOptions,
   draft,
   onDraftChange,
   onBack,
+  onMutated,
 }: {
   service: IZCodeTaskService;
+  live: ConversationLive;
   meta: ZCodeTaskMeta;
-  snapshot: MobileTaskSnapshot | null;
+  configOptions: ZCodeConfigOption[] | undefined;
   draft: ComposerDraft;
   onDraftChange: (next: ComposerDraft) => void;
   onBack: () => void;
+  onMutated: () => void;
 }) {
-  const [input, setInput] = useState("");
+  const toast = useToast();
   const [sending, setSending] = useState(false);
-  const [sheet, setSheet] = useState<null | "mode" | "model" | "thought">(null);
+  const [activeTurnKey, setActiveTurnKey] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const stickToBottomRef = useRef(true);
+  const stickRef = useRef(true);
+  const activeTurnRef = useRef<string | null>(null);
 
-  const configOptions = snapshot?.configOptions;
-  const modelOption = findConfigOption(configOptions, "model");
-  const thoughtOption = findConfigOption(configOptions, "thought_level");
-  const effectiveModelValue = draft.modelValue ?? String(modelOption?.currentValue ?? "");
-  const effectiveModel = modelEntries(modelOption).find(
-    (entry) => entry.rawValue === effectiveModelValue,
-  );
-  const effectiveThought = draft.thought ?? String(thoughtOption?.currentValue ?? "");
-  const rawMode = normalizeMode(draft.mode ?? meta.mode);
+  const rows = live.state?.snapshot?.rows.window ?? null;
+  // 运行态取投影的权威 turnHeader.state，不再依赖 3s 任务列表的 meta.status。
+  const generating = rows ? anyTurnRunning(rows) : meta.status === "running";
 
-  const generating = meta.status === "running";
-  const pendingPermissions = snapshot?.runtime?.pendingPermissions ?? [];
+  const turns = useMemo(() => (rows ? buildTimelineFromRows(rows) : []), [rows]);
+  const empty = timelineIsEmpty(turns);
+  const navItems = useMemo(() => buildTimelineNav(turns, generating), [turns, generating]);
 
+  /**
+   * 更新"当前所在轮"。
+   *
+   * 判定方式：第一个顶边越过滚动容器上沿的 turn 就是当前轮。不能用 IntersectionObserver
+   * 的 ratio —— 长 turn 会长时间占据视口，ratio 判出来的"当前"会落后于用户直觉。
+   */
+  const syncActiveTurn = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el || navItems.length === 0) return;
+    const containerTop = el.getBoundingClientRect().top;
+    let current: string | null = navItems[0]?.turnKey ?? null;
+    for (const item of navItems) {
+      const node = document.getElementById(turnAnchorId(item.turnKey));
+      if (!node) continue;
+      if (node.getBoundingClientRect().top - containerTop <= 24) {
+        current = item.turnKey;
+      } else {
+        break;
+      }
+    }
+    if (current !== activeTurnRef.current) {
+      activeTurnRef.current = current;
+      setActiveTurnKey(current);
+    }
+  }, [navItems]);
+
+  // 新内容到达且用户没往上翻时贴底。generating 也进依赖，保证流式追加时跟随。
   useEffect(() => {
     const el = scrollRef.current;
-    if (el && stickToBottomRef.current) {
+    if (el && stickRef.current) {
       el.scrollTop = el.scrollHeight;
     }
-  }, [snapshot]);
+    syncActiveTurn();
+  }, [rows, generating, syncActiveTurn]);
 
-  const send = async () => {
-    const content = input.trim();
-    if (!content || sending) return;
-    setSending(true);
-    setInput("");
-    try {
-      let modelSelection = undefined;
-      if (effectiveModelValue) {
-        try {
-          const parsed = parseModelPickerValue(effectiveModelValue);
-          // 档位随提交发送（与桌面草稿语义一致）：优先用户选择/服务端当前档，
-          // 再退到原值自带档位与目录默认档。剥掉档位会让强制要求 reasoning
-          // level 的模型（如 GLM-5.3 会员源）在 model_creation 阶段直接报错。
-          const reasoning =
-            (effectiveThought.length > 0 ? effectiveThought : null) ??
-            parsed.options?.reasoningLevel ??
-            effectiveModel?.defaultThoughtLevel;
-          modelSelection = {
-            ...parsed,
-            ...(reasoning ? { options: { reasoningLevel: reasoning } } : {}),
-          };
-        } catch {
-          // 原值解析失败则不带 modelSelection，与旧行为一致。
-        }
+  const jumpToTurn = useCallback((turnKey: string) => {
+    const el = scrollRef.current;
+    const node = document.getElementById(turnAnchorId(turnKey));
+    if (!el || !node) return;
+    // 跳转后不再贴底，否则下一轮投影更新会把用户弹回末尾。
+    stickRef.current = false;
+    const top =
+      el.scrollTop + node.getBoundingClientRect().top - el.getBoundingClientRect().top - 8;
+    el.scrollTo({ top, behavior: "smooth" });
+  }, []);
+
+  const hasEarlier = rows !== null && live.state?.snapshot?.rows.firstRowId !== null &&
+    (rows[0]?.rowId ?? 0) > (live.state?.snapshot?.rows.firstRowId ?? 0);
+
+  const loadEarlier = useCallback(() => {
+    live.loadOlder();
+  }, [live]);
+
+  const send = useCallback(
+    async (content: string, modelSelection: ModelSelection | undefined, mode: SubmittableMode) => {
+      setSending(true);
+      try {
+        await service.sendPrompt({
+          taskId: meta.taskId,
+          traceId: newTraceId(),
+          content,
+          clientMode: "web-remote-replayable",
+          clientLabel: "zcode-mobile",
+          ...(modelSelection ? { modelSelection } : {}),
+          mode,
+        });
+        stickRef.current = true;
+        onMutated();
+      } catch (error) {
+        toast.show(`Send failed: ${error instanceof Error ? error.message : String(error)}`, {
+          tone: "fail",
+          duration: 4000,
+        });
+      } finally {
+        setSending(false);
       }
-      await service.sendPrompt({
-        taskId: meta.taskId,
-        traceId: newTraceId(),
-        content,
-        clientMode: "web-remote-replayable",
-        clientLabel: "zcode-mobile",
-        ...(modelSelection ? { modelSelection } : {}),
-        mode: rawMode,
-      });
-      stickToBottomRef.current = true;
-    } catch (error) {
-      Toast.show({
-        icon: "fail",
-        content: `Send failed: ${error instanceof Error ? error.message : String(error)}`,
-        duration: 4000,
-      });
-    } finally {
-      setSending(false);
-    }
-  };
+    },
+    [service, meta, toast, onMutated],
+  );
 
-  const stop = async () => {
+  const stop = useCallback(async () => {
     try {
       await service.stopGeneration({
         taskId: meta.taskId,
@@ -166,169 +144,108 @@ export function ChatScreen({
         workspaceIdentity: meta.workspaceIdentity,
       });
     } catch {
-      // 静默
+      // 静默：投影会反映真实状态
     }
-  };
+  }, [service, meta]);
 
-  const modelGroups = groupModels(modelEntries(modelOption));
-  const thoughtLevels =
-    draft.modelValue && effectiveModel
-      ? effectiveModel.thoughtLevels
-      : (thoughtOption?.options ?? []).map((entry) => entry.value);
+  // 正文不再经过快照预算裁剪；保留入口以兼容旧调用点，直接走补拉接口。
+  const loadBodyRef = useCallback(
+    async (refId: string) => {
+      try {
+        const body = await service.getTaskSnapshotBody({
+          taskId: meta.taskId,
+          workspacePath: meta.workspacePath,
+          workspaceIdentity: meta.workspaceIdentity,
+          refId,
+        });
+        if (body && typeof body.content === "string") {
+          toast.show("Loaded full message", { tone: "ok" });
+        }
+      } catch (error) {
+        toast.show(`Load failed: ${error instanceof Error ? error.message : String(error)}`, {
+          tone: "fail",
+        });
+      }
+    },
+    [service, meta, toast],
+  );
+
+  const pending = live.state?.snapshot?.pendingInteractions ?? [];
+  const connectError = live.state?.status === "error" ? live.state.lastError : null;
 
   return (
     <>
-      <NavBar
-        onBack={onBack}
-        backArrow
-        right={generating ? <DotLoading color="primary" /> : null}
-        style={{ ["--background-color" as string]: "var(--surface)" }}
-      >
-        <span className="title-text">{meta.title}</span>
-      </NavBar>
+      <header className="topbar">
+        <button className="topbar-back" onClick={onBack} aria-label="Back">
+          <ChevronLeft size={20} />
+        </button>
+        <div className="topbar-title">{meta.title}</div>
+        {generating ? (
+          <span className="topbar-live" title="Running">
+            running
+          </span>
+        ) : null}
+      </header>
 
-      {pendingPermissions.length > 0 && (
+      {pending.length > 0 ? (
         <div className="perm-banner">
-          {pendingPermissions.length} permission request(s) pending — approve in the desktop app
+          <Lock size={12} />
+          {pending.length} permission request(s) pending — approve in the desktop app
         </div>
-      )}
+      ) : null}
 
-      <div
-        className="chat-scroll"
-        ref={scrollRef}
-        onScroll={(event) => {
-          const el = event.currentTarget;
-          stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-        }}
-      >
-        {(snapshot?.messages ?? []).length === 0 && (
-          <div className="empty">Loading conversation…</div>
-        )}
-        {(snapshot?.messages ?? []).map((message, index) => (
-          <MessageBubble key={message.id ?? index} message={message} />
-        ))}
-        {generating && (
-          <div className="bubble-row assistant">
-            <div className="bubble bubble-assistant typing">
-              <DotLoading />
+      {connectError ? (
+        <div className="perm-banner">
+          Live connection failed — <button className="linklike" onClick={live.retry}>retry</button>
+        </div>
+      ) : null}
+
+      <div className="chat-body">
+        <div
+          className="chat-scroll"
+          ref={scrollRef}
+          onScroll={(event) => {
+            const el = event.currentTarget;
+            stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < STICK_THRESHOLD_PX;
+            syncActiveTurn();
+          }}
+        >
+          {hasEarlier ? (
+            <button className="load-earlier" onClick={loadEarlier}>
+              Load earlier messages
+            </button>
+          ) : null}
+
+          {empty ? (
+            <div className="empty">
+              {rows ? <span>No messages yet.</span> : <span>Loading conversation…</span>}
             </div>
-          </div>
-        )}
+          ) : (
+            <Timeline turns={turns} isGenerating={generating} onLoadBodyRef={loadBodyRef} />
+          )}
+          {generating ? (
+            <div className="tl-working">
+              <span className="tl-working-dot" />
+              working
+            </div>
+          ) : null}
+        </div>
+
+        {!empty ? (
+          <MessageNav items={navItems} activeKey={activeTurnKey} onJump={jumpToTurn} />
+        ) : null}
       </div>
 
-      <div className="composer">
-        <div className="composer-chips">
-          <button className="chip" onClick={() => setSheet("mode")}>
-            {accessModeLabel(rawMode)} <ChevronDown size={11} />
-          </button>
-          {modelOption && (
-            <button className="chip" onClick={() => setSheet("model")}>
-              <Cpu size={12} />
-              <span className="chip-ellipsis">
-                {effectiveModel?.name ?? (effectiveModelValue || "Model")}
-              </span>
-              <ChevronDown size={11} />
-            </button>
-          )}
-          {thoughtLevels.length > 0 && (
-            <button className="chip" onClick={() => setSheet("thought")}>
-              <Brain size={12} />
-              {effectiveThought.length > 0 ? thoughtLabel(effectiveThought) : "Thinking"}
-              <ChevronDown size={11} />
-            </button>
-          )}
-        </div>
-        <div className="composer-input-row">
-          <TextArea
-            value={input}
-            placeholder={generating ? "Generating… you can queue a message" : "Ask for changes…"}
-            autoSize={{ minRows: 1, maxRows: 4 }}
-            onChange={(value) => setInput(value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                void send();
-              }
-            }}
-          />
-          <button className="send-btn stop" onClick={() => void stop()} aria-label="Stop generation">
-            <Square size={15} fill="currentColor" />
-          </button>
-          <button
-            className="send-btn"
-            onClick={() => void send()}
-            disabled={sending || !input.trim()}
-            aria-label="Send"
-          >
-            <ArrowUp size={18} strokeWidth={2.6} />
-          </button>
-        </div>
-      </div>
-
-      {sheet === "mode" && (
-        <ActionSheet
-          visible
-          extra="Access mode"
-          cancelText="Cancel"
-          closeOnAction
-          actions={ACCESS_MODES.map((mode) => ({
-            key: mode.value,
-            text: `${mode.label}${mode.value === rawMode ? " ✓" : ""}`,
-            description: mode.description,
-          }))}
-          onAction={(action) => {
-            onDraftChange({ ...draft, mode: String(action.key) });
-            setSheet(null);
-          }}
-          onClose={() => setSheet(null)}
-        />
-      )}
-
-      {sheet === "model" && (
-        <GroupedOptionSheet
-          title="Model"
-          groups={modelGroups.map((group) => ({
-            label: group.providerName,
-            options: group.models.map((entry) => ({
-              value: entry.rawValue,
-              label: entry.name,
-              sub: entry.modelId !== entry.name ? entry.modelId : undefined,
-              selected: entry.rawValue === effectiveModelValue,
-            })),
-          }))}
-          onPick={(value) => {
-            const picked = modelGroups
-              .flatMap((group) => group.models)
-              .find((entry) => entry.rawValue === value);
-            const thoughtForModel =
-              picked && draft.thought && !picked.thoughtLevels.includes(draft.thought)
-                ? (picked.defaultThoughtLevel ?? null)
-                : draft.thought;
-            onDraftChange({ ...draft, modelValue: value, thought: thoughtForModel });
-            setSheet(null);
-          }}
-          onClose={() => setSheet(null)}
-        />
-      )}
-
-      {sheet === "thought" && (
-        <ActionSheet
-          visible
-          extra="Thinking"
-          cancelText="Cancel"
-          closeOnAction
-          actions={thoughtLevels.map((level) => ({
-            key: level,
-            text: `${thoughtLabel(level)}${level === effectiveThought ? " ✓" : ""}`,
-            description: level !== thoughtLabel(level) ? level : undefined,
-          }))}
-          onAction={(action) => {
-            onDraftChange({ ...draft, thought: String(action.key) });
-            setSheet(null);
-          }}
-          onClose={() => setSheet(null)}
-        />
-      )}
+      <Composer
+        meta={meta}
+        configOptions={configOptions}
+        draft={draft}
+        onDraftChange={onDraftChange}
+        generating={generating}
+        sending={sending}
+        onSend={send}
+        onStop={stop}
+      />
     </>
   );
 }

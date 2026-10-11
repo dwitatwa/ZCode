@@ -1,0 +1,11 @@
+{
+  // 验证脚本专用：@zcode/ui 的源码用 "@/*" 包内别名，只有 bundler（vite）和
+  // ui 自己的 tsconfig 认得。tsx 跑 node 脚本时默认按最近 tsconfig 解析，
+  // 这里补上同一份映射，让 verify 脚本能直接引用生产源码而不是复制一份逻辑。
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "@/*": ["../ui/src/*"]
+    }
+  }
+}

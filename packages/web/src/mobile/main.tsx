@@ -1,53 +1,71 @@
 /**
- * ZCode Mobile — 三屏结构（/mobile.html），antd-mobile + lucide-react：
- *   Explorer：项目选择 + 任务列表（新建 / 归档 / 删除 / 归档区管理）
- *   Chat：快照轮询会话 + composer（Access / Model / Thinking 选择器）
- *   Info：上下文 / 缓存 / 子代理 / workflow / 用量 / 诊断
- * 单条 WS（connectViaWebSocket）承载全部 RPC；三屏常驻，用 display 切换以保留
- * 滚动位置与 composer 草稿。轮询节奏：任务列表 8s、快照 3s、Info 专属 RPC 5s（仅可见时）。
+ * ZCode Mobile — 应用外壳（/mobile.html）。
+ *
+ * 结构：一个 WS 连接承载全部 RPC；三个屏常驻，用 display 切换以保留滚动位置
+ * 与 composer 草稿状态。底部导航只有两项（Tasks / Info），因为任务是主体，
+ * 会话视图本身就在 Tasks 的下一层。
+ *
+ * 刷新节奏：
+ *   任务列表 8s（有打开的任务时暂停）
+ *   任务快照 3s（打开任务时）
+ *   流式事件：即时增量更新（不等轮询）
+ *
+ * 屏幕数量刻意压到最少：手机上每多一层导航，回到原处就多一次点击。
  */
-import { StrictMode, useEffect, useState } from "react";
+import { StrictMode, useCallback, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Badge, SafeArea, TabBar, Toast } from "antd-mobile";
-import { FolderOpen, Info, MessageSquareMore } from "lucide-react";
+import { ListTodo, Activity } from "lucide-react";
 import type { IServiceAccessor } from "@zcode/services";
-import type { ZCodeTaskMeta } from "@zcode/shared";
-import "antd-mobile/es/global/global.css";
+import type { ZCodeConfigOption, ZCodeTaskMeta } from "@zcode/shared";
 import "./mobile.css";
-import "./lib/adm-react19.js";
-import { connectMobile, fetchServerInfo, type MobileWorkspaceInfo } from "./lib/connection.js";
-import { emptyDraft, type ComposerDraft, type MobileTaskSnapshot } from "./lib/types.js";
+import {
+  connectMobile,
+  fetchServerInfo,
+  type MobileWorkspaceInfo,
+} from "./lib/connection.js";
+import { emptyDraft, type ComposerDraft } from "./lib/types.js";
+import { useConversationLive } from "./lib/live.js";
+import { ToastProvider, useToast } from "./components/Overlays.js";
 import { ExplorerScreen } from "./screens/ExplorerScreen.js";
 import { ChatScreen } from "./screens/ChatScreen.js";
 import { InfoScreen } from "./screens/InfoScreen.js";
 
+type Phase = "connecting" | "ready" | "error";
+type Tab = "tasks" | "info";
+
+const TASK_POLL_MS = 8000;
+/** composer 配置目录的刷新节奏；不参与时间线渲染。 */
+const CONFIG_POLL_MS = 6000;
+
 const servicesRef: { current: IServiceAccessor | null } = { current: null };
 
-type Phase = "connecting" | "ready" | "error";
-type Tab = "explorer" | "chat" | "info";
-
 function MobileApp() {
+  const toast = useToast();
   const [phase, setPhase] = useState<Phase>("connecting");
   const [errorMsg, setErrorMsg] = useState("");
   const [workspaces, setWorkspaces] = useState<MobileWorkspaceInfo[]>([]);
   const [workspaceIndex, setWorkspaceIndex] = useState(0);
   const [tasks, setTasks] = useState<ZCodeTaskMeta[]>([]);
   const [activeTask, setActiveTask] = useState<ZCodeTaskMeta | null>(null);
-  const [snapshot, setSnapshot] = useState<MobileTaskSnapshot | null>(null);
-  const [tab, setTab] = useState<Tab>("explorer");
+  const [tab, setTab] = useState<Tab>("tasks");
   const [draft, setDraft] = useState<ComposerDraft>(emptyDraft());
-  const [creating, setCreating] = useState(false);
   const [reloadTick, setReloadTick] = useState(0);
 
-  // 启动：server-info 与 WS 连接并行；server-info 失败不阻塞连接（ready 后会重试）。
+  const workspace = workspaces[workspaceIndex] ?? null;
+  const service = servicesRef.current?.zcodeTaskService;
+  const agentService = servicesRef.current?.zcodeAgentService ?? null;
+
+  /* ------------------------------ 连接 ------------------------------ */
+
   useEffect(() => {
     let disposed = false;
+    // server-info 与 WS 并行；server-info 失败不阻塞连接，ready 后由重试兜底。
     void fetchServerInfo()
       .then((info) => {
         if (!disposed && info.workspaces?.length) setWorkspaces(info.workspaces);
       })
       .catch(() => {
-        // ready 后的重试循环会兜底
+        // 重试循环兜底
       });
     connectMobile()
       .then((accessor) => {
@@ -65,7 +83,7 @@ function MobileApp() {
     };
   }, []);
 
-  // server-info 兜底重试：连上了但还没拿到 workspace 时每 5s 拉一次。
+  // 连上但没拿到 workspace 时每 5s 重试一次 server-info。
   useEffect(() => {
     if (phase !== "ready" || workspaces.length > 0) return;
     const timer = setInterval(() => {
@@ -80,13 +98,10 @@ function MobileApp() {
     return () => clearInterval(timer);
   }, [phase, workspaces.length]);
 
-  const workspace = workspaces[workspaceIndex] ?? null;
+  /* --------------------------- 任务列表轮询 --------------------------- */
 
-  // 任务列表轮询（8s）；有打开的任务时暂停。
   useEffect(() => {
-    if (phase !== "ready" || !workspace || activeTask) return;
-    const service = servicesRef.current?.zcodeTaskService;
-    if (!service) return;
+    if (phase !== "ready" || !workspace || !service || activeTask) return;
     let cancelled = false;
     const poll = async () => {
       try {
@@ -100,18 +115,39 @@ function MobileApp() {
       }
     };
     void poll();
-    const timer = setInterval(poll, 8000);
+    const timer = setInterval(poll, TASK_POLL_MS);
     return () => {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [phase, workspace, activeTask, reloadTick]);
+  }, [phase, workspace, service, activeTask, reloadTick]);
 
-  // 活动任务快照轮询（3s）；Chat 与 Info 共用这一份。
+  /* --------------------------- 实时会话投影 --------------------------- */
+  //
+  // 取代原先的「3s 轮询快照 + 过滤流式事件」：那条路径会把 agent_message_chunk /
+  // agent_thought_chunk 直接丢掉（isTimelineRelevantEvent 只放行少数结构性事件），
+  // 且在事件放行后也只是当作"该重拉快照"的信号。现在直接复用桌面的
+  // SessionDataLayer + ConversationProjectionStore，文本/思考/工具行到达即渲染。
+  const live = useConversationLive({
+    accessor: servicesRef.current,
+    workspacePath: activeTask?.workspacePath ?? null,
+    workspaceIdentity: activeTask?.workspaceIdentity,
+    sessionId: activeTask?.taskId ?? null,
+  });
+
+  /* --------------------------- 配置目录（仅 composer 用） --------------------------- */
+  //
+  // 模型/思考档位的"可选清单"目前只有 legacy task snapshot 携带（v4 投影只给
+  // 当前 effective 的 model/provider/thought 与档位，不给跨供应商的模型目录）。
+  // 这条轮询只喂 composer 的选择器，不再参与时间线渲染 —— 时间线走上面的投影链路。
+  // 6s 足够：清单只在用户切换模型或服务端目录变化时改变。
+  const [configOptions, setConfigOptions] = useState<ZCodeConfigOption[] | undefined>(undefined);
+
   useEffect(() => {
-    if (phase !== "ready" || !activeTask) return;
-    const service = servicesRef.current?.zcodeTaskService;
-    if (!service) return;
+    if (phase !== "ready" || !activeTask || !service) {
+      setConfigOptions(undefined);
+      return;
+    }
     let cancelled = false;
     const poll = async () => {
       try {
@@ -121,36 +157,34 @@ function MobileApp() {
           workspaceIdentity: activeTask.workspaceIdentity,
           clientMode: "web-remote-replayable",
         });
-        if (!cancelled && snap) setSnapshot(snap);
+        if (!cancelled && snap) setConfigOptions(snap.configOptions);
       } catch {
-        // 静默，下一轮重试
+        // 静默：下一轮重试
       }
     };
     void poll();
-    const timer = setInterval(poll, 3000);
+    const timer = setInterval(poll, CONFIG_POLL_MS);
     return () => {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [phase, activeTask]);
+  }, [phase, activeTask, service, reloadTick]);
 
-  // 切换任务时清空 composer 草稿覆盖。
+  // 切换任务时清空草稿（投影租约由 useConversationLive 按 sessionId 自行切换）。
   useEffect(() => {
     setDraft(emptyDraft());
-    setSnapshot(null);
   }, [activeTask?.taskId]);
 
-  const openTask = (meta: ZCodeTaskMeta) => {
-    setActiveTask(meta);
-    setTab("chat");
-  };
+  /* ------------------------------ 动作 ------------------------------ */
 
-  const createTask = async () => {
-    if (!workspace || !servicesRef.current || creating) return;
-    setCreating(true);
+  const openTask = useCallback((meta: ZCodeTaskMeta) => {
+    setActiveTask(meta);
+  }, []);
+
+  const createTask = useCallback(async () => {
+    if (!workspace || !servicesRef.current) return;
     try {
-      const service = servicesRef.current.zcodeTaskService;
-      const created = await service.createTask({
+      const created = await servicesRef.current.zcodeTaskService.createTask({
         workspacePath: workspace.path,
         workspaceIdentity: workspace.workspaceIdentity,
         // 首发前的空 session 不落库，session_input 有 session 外键；deferred 让 V4
@@ -159,53 +193,56 @@ function MobileApp() {
         deferPersistenceUntilFirstPrompt: true,
       });
       setTasks((current) => [created, ...current]);
-      openTask(created);
+      setActiveTask(created);
     } catch (error) {
-      Toast.show({
-        icon: "fail",
-        content: `Create failed: ${error instanceof Error ? error.message : String(error)}`,
+      toast.show(`Create failed: ${error instanceof Error ? error.message : String(error)}`, {
+        tone: "fail",
       });
-    } finally {
-      setCreating(false);
     }
-  };
+  }, [workspace, toast]);
 
-  const switchWorkspace = (index: number) => {
+  const switchWorkspace = useCallback((index: number) => {
     setWorkspaceIndex(index);
     setTasks([]);
     setActiveTask(null);
-    setSnapshot(null);
-    setTab("explorer");
-  };
+    setTab("tasks");
+  }, []);
 
-  const pendingCount = snapshot?.runtime?.pendingPermissions?.length ?? 0;
+  const refresh = useCallback(() => setReloadTick((tick) => tick + 1), []);
+
+  const pendingCount = live.state?.snapshot?.pendingInteractions?.length ?? 0;
   const hasTask = activeTask !== null;
 
+  const navItems = useMemo(
+    () =>
+      [
+        { key: "tasks" as const, label: "Tasks", icon: <ListTodo size={19} /> },
+        { key: "info" as const, label: "Info", icon: <Activity size={19} /> },
+      ] satisfies { key: Tab; label: string; icon: React.ReactNode }[],
+    [],
+  );
+
   if (phase === "connecting") {
-    return <div className="empty">Connecting…</div>;
+    return <div className="boot">Connecting…</div>;
   }
+
   if (phase === "error") {
     return (
-      <div className="empty">
+      <div className="boot">
         <p>Connection failed.</p>
-        <p className="error-detail">{errorMsg}</p>
-        <p className="error-detail">
-          Open the token link from the server console once, then reload this page.
-        </p>
-        <button className="retry-btn" onClick={() => window.location.reload()}>
+        <p className="note">{errorMsg}</p>
+        <button className="btn" onClick={() => window.location.reload()}>
           Retry
         </button>
       </div>
     );
   }
 
-  const service = servicesRef.current?.zcodeTaskService;
-  const agentService = servicesRef.current?.zcodeAgentService ?? null;
   if (!service || !workspace) {
     return (
-      <div className="empty">
+      <div className="boot">
         <p>No workspace configured on the server.</p>
-        <button className="retry-btn" onClick={() => window.location.reload()}>
+        <button className="btn" onClick={() => window.location.reload()}>
           Retry
         </button>
       </div>
@@ -213,84 +250,81 @@ function MobileApp() {
   }
 
   return (
-    <>
-      <div className="screen-wrap" style={{ display: tab === "explorer" ? "flex" : "none" }}>
-        <ExplorerScreen
-          service={service}
-          workspaces={workspaces}
-          workspaceIndex={workspaceIndex}
-          onWorkspaceIndexChange={switchWorkspace}
-          tasks={tasks}
-          activeTaskId={activeTask?.taskId ?? null}
-          onOpenTask={openTask}
-          onCreateTask={() => void createTask()}
-          onMutated={() => setReloadTick((tick) => tick + 1)}
-          onTaskUnavailable={(taskId) => {
-            if (taskId === activeTask?.taskId) {
-              setActiveTask(null);
-              setSnapshot(null);
-            }
-          }}
-        />
-      </div>
-      <div className="screen-wrap" style={{ display: tab === "chat" ? "flex" : "none" }}>
-        {activeTask && (
-          <ChatScreen
+    <div className="app">
+      <main className="app-main">
+        <div className="pane" style={{ display: activeTask ? "none" : "flex" }}>
+          <ExplorerScreen
             service={service}
-            meta={activeTask}
-            snapshot={snapshot}
-            draft={draft}
-            onDraftChange={setDraft}
-            onBack={() => setTab("explorer")}
+            workspaces={workspaces}
+            workspaceIndex={workspaceIndex}
+            onWorkspaceIndexChange={switchWorkspace}
+            tasks={tasks}
+            activeTaskId={activeTask?.taskId ?? null}
+            onOpenTask={openTask}
+            onCreateTask={() => void createTask()}
+            onMutated={refresh}
+            onTaskUnavailable={(taskId) => {
+              if (taskId === activeTask?.taskId) {
+                setActiveTask(null);
+              }
+            }}
           />
-        )}
-      </div>
-      <div className="screen-wrap" style={{ display: tab === "info" ? "flex" : "none" }}>
-        {activeTask && (
-          <InfoScreen
-            service={service}
-            agentService={agentService}
-            meta={activeTask}
-            snapshot={snapshot}
-            visible={tab === "info"}
-          />
-        )}
-      </div>
-      <TabBar
-        activeKey={tab}
-        safeArea={false}
-        onChange={(key) => {
-          if ((key === "chat" || key === "info") && !hasTask) return;
-          setTab(key as Tab);
-        }}
-      >
-        <TabBar.Item key="explorer" icon={<FolderOpen size={20} />} title="Explorer" />
-        <TabBar.Item
-          key="chat"
-          icon={<MessageSquareMore size={20} />}
-          title="Chat"
-          badge={hasTask ? undefined : <span className="tab-disabled">–</span>}
-        />
-        <TabBar.Item
-          key="info"
-          icon={
-            <span style={{ position: "relative", display: "inline-flex" }}>
-              <Info size={20} />
-              {pendingCount > 0 ? (
-                <Badge content={Badge.dot} style={{ "--top": "-2px", "--right": "-4px" }} />
-              ) : null}
+        </div>
+
+        <div className="pane" style={{ display: activeTask ? "flex" : "none" }}>
+          {activeTask ? (
+            <ChatScreen
+              service={service}
+              live={live}
+              meta={activeTask}
+              configOptions={configOptions}
+              draft={draft}
+              onDraftChange={setDraft}
+              onBack={() => setActiveTask(null)}
+              onMutated={refresh}
+            />
+          ) : null}
+        </div>
+
+        <div className="pane" style={{ display: tab === "info" ? "flex" : "none" }}>
+          {activeTask ? (
+            <InfoScreen
+              service={service}
+              agentService={agentService}
+              taskId={activeTask.taskId}
+              workspacePath={activeTask.workspacePath}
+              workspaceIdentity={activeTask.workspaceIdentity}
+              snapshot={live.state?.snapshot ?? null}
+              visible={tab === "info"}
+            />
+          ) : null}
+        </div>
+      </main>
+
+      {/* 会话视图内部已经有返回条，不在会话时隐藏底部导航，避免双重导航。 */}
+      <nav className="tabbar" style={{ display: hasTask ? "none" : undefined }}>
+        {navItems.map((item) => (
+          <button
+            key={item.key}
+            className={`tab${tab === item.key ? " active" : ""}`}
+            onClick={() => setTab(item.key)}
+          >
+            <span className="tab-icon">
+              {item.icon}
+              {item.key === "info" && pendingCount > 0 ? <span className="tab-dot" /> : null}
             </span>
-          }
-          title="Info"
-        />
-      </TabBar>
-      <SafeArea position="bottom" />
-    </>
+            <span className="tab-label">{item.label}</span>
+          </button>
+        ))}
+      </nav>
+    </div>
   );
 }
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <MobileApp />
+    <ToastProvider>
+      <MobileApp />
+    </ToastProvider>
   </StrictMode>,
 );

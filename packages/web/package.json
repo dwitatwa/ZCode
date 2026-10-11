@@ -6,14 +6,15 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "oxlint",
-    "lint:fix": "oxlint --fix"
+    "lint:fix": "oxlint --fix",
+    "verify:timeline": "tsx scripts/verify-mobile-timeline.mts",
+    "verify:live": "tsx --tsconfig tsconfig.verify.json scripts/verify-mobile-live.mts"
   },
   "dependencies": {
     "@zcode/client": "workspace:*",
     "@zcode/services": "workspace:*",
     "@zcode/shared": "workspace:*",
     "@zcode/ui": "workspace:*",
-    "antd-mobile": "^5.43.0",
     "lucide-react": "^1.17.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"

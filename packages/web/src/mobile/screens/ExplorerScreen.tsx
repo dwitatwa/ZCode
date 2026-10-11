@@ -1,23 +1,18 @@
 /**
- * Explorer 屏：项目（workspace）选择、任务列表、新建 / 归档 / 删除。
- * antd-mobile 组件 + lucide 图标；归档相关走 zcodeTaskService 既有 RPC。
- * 任务行：点按打开，左滑（或 ··· 菜单）归档 / 删除。
+ * Explorer 屏：工作区切换 + 任务列表 + 归档区。
+ *
+ * 交互相对旧版的改动：
+ * - 去掉 antd-mobile 的 SwipeAction/Popover/CapsuleTabs，改成本项目自己的
+ *   行内 ··· 菜单与胶囊切换器，视觉与时间线保持一致。
+ * - 点击任务 = 打开；长按/··· = 归档 / 删除，避免误触。
+ * - 归档区默认收起，放在列表底部。
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ActionSheet,
-  CapsuleTabs,
-  Collapse,
-  DotLoading,
-  NavBar,
-  Popover,
-  SwipeAction,
-  Tag,
-  Toast,
-} from "antd-mobile";
-import {
-  ChevronRight,
-  FolderOpen,
+  Archive,
+  ArchiveRestore,
+  ChevronDown,
+  FolderGit2,
   MoreHorizontal,
   Plus,
   Trash2,
@@ -25,12 +20,7 @@ import {
 import type { IZCodeTaskService } from "@zcode/services";
 import type { ZCodeTaskMeta } from "@zcode/shared";
 import type { MobileWorkspaceInfo } from "../lib/connection.js";
-import { confirmAction } from "../components/Sheet.js";
-
-interface PickerSheetState {
-  task: ZCodeTaskMeta;
-  archived: boolean;
-}
+import { ConfirmSheet, Sheet, useToast } from "../components/Overlays.js";
 
 function workspaceLabel(workspace: MobileWorkspaceInfo): string {
   if (workspace.label) return workspace.label;
@@ -40,48 +30,55 @@ function workspaceLabel(workspace: MobileWorkspaceInfo): string {
 
 function relativeTime(ts: number): string {
   const diff = Date.now() - ts;
-  const m = Math.floor(diff / 60_000);
-  if (m < 1) return "now";
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h`;
-  return `${Math.floor(h / 24)}d`;
+  const minutes = Math.floor(diff / 60_000);
+  if (minutes < 1) return "now";
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d`;
 }
 
-function failToast(error: unknown, prefix: string): void {
-  Toast.show({ icon: "fail", content: `${prefix}: ${error instanceof Error ? error.message : String(error)}` });
-}
+type ConfirmState =
+  | { kind: "delete"; task: ZCodeTaskMeta; archived: boolean }
+  | { kind: "delete-all"; count: number };
 
 function TaskRow({
   task,
   active,
   archived,
   onOpen,
+  onMenu,
 }: {
   task: ZCodeTaskMeta;
   active: boolean;
   archived: boolean;
   onOpen: () => void;
+  onMenu: () => void;
 }) {
   return (
-    <div className={`task-row${active ? " active" : ""}`} onClick={onOpen}>
-      <div className="task-row-main">
+    <div className={`task-row${active ? " active" : ""}${archived ? " archived" : ""}`}>
+      <button className="task-open" onClick={onOpen}>
         <div className="task-title">{task.title}</div>
-        <div className="task-sub">
-          {task.status ? (
-            <Tag color="success" fill="outline" style={{ fontSize: 10 }}>
-              {task.status}
-            </Tag>
-          ) : null}
+        <div className="task-meta">
           <span>{relativeTime(task.updatedAt)}</span>
+          {task.status ? (
+            <>
+              <span className="task-sep">·</span>
+              {task.status === "running" ? <span className="run-cursor" /> : null}
+              <span className={`task-status ${task.status}`}>{task.status}</span>
+            </>
+          ) : null}
           {archived ? (
-            <Tag color="warning" fill="outline" style={{ fontSize: 10 }}>
-              archived
-            </Tag>
+            <>
+              <span className="task-sep">·</span>
+              <span>archived</span>
+            </>
           ) : null}
         </div>
-      </div>
-      <ChevronRight size={16} className="chev" />
+      </button>
+      <button className="task-menu" onClick={onMenu} aria-label="Task actions">
+        <MoreHorizontal size={17} />
+      </button>
     </div>
   );
 }
@@ -106,16 +103,25 @@ export function ExplorerScreen({
   activeTaskId: string | null;
   onOpenTask: (meta: ZCodeTaskMeta) => void;
   onCreateTask: () => void;
-  /** 任何归档/删除成功后通知 App 立即刷新任务列表。 */
   onMutated: () => void;
-  /** 被归档/删除的任务若是当前打开的任务，通知 App 关闭它。 */
   onTaskUnavailable: (taskId: string) => void;
 }) {
   const workspace = workspaces[workspaceIndex];
+  const toast = useToast();
   const [archivedOpen, setArchivedOpen] = useState(false);
   const [archived, setArchived] = useState<ZCodeTaskMeta[]>([]);
   const [archivedLoading, setArchivedLoading] = useState(false);
-  const [picker, setPicker] = useState<PickerSheetState | null>(null);
+  const [menuTask, setMenuTask] = useState<{ task: ZCodeTaskMeta; archived: boolean } | null>(null);
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
+  const [wsOpen, setWsOpen] = useState(false);
+  const mounted = useRef(true);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const loadArchived = useCallback(async () => {
     if (!workspace) return;
@@ -125,11 +131,11 @@ export function ExplorerScreen({
         workspacePath: workspace.path,
         workspaceIdentity: workspace.workspaceIdentity,
       });
-      setArchived(list);
+      if (mounted.current) setArchived(list);
     } catch {
-      // 静默：下次展开/操作后重试
+      // 静默：下次展开或操作后重试
     } finally {
-      setArchivedLoading(false);
+      if (mounted.current) setArchivedLoading(false);
     }
   }, [service, workspace]);
 
@@ -144,7 +150,7 @@ export function ExplorerScreen({
   const sorted = [...tasks].sort((a, b) => b.updatedAt - a.updatedAt);
   const sortedArchived = [...archived].sort((a, b) => b.updatedAt - a.updatedAt);
 
-  const archiveTask = async (task: ZCodeTaskMeta) => {
+  const runArchive = async (task: ZCodeTaskMeta) => {
     try {
       await service.archiveTask({
         taskId: task.taskId,
@@ -154,13 +160,15 @@ export function ExplorerScreen({
       if (task.taskId === activeTaskId) onTaskUnavailable(task.taskId);
       if (archivedOpen) void loadArchived();
       onMutated();
-      Toast.show({ content: "Task archived", icon: "ok" });
+      toast.show("Task archived", { tone: "ok" });
     } catch (error) {
-      failToast(error, "Archive failed");
+      toast.show(`Archive failed: ${error instanceof Error ? error.message : String(error)}`, {
+        tone: "fail",
+      });
     }
   };
 
-  const unarchiveTask = async (task: ZCodeTaskMeta) => {
+  const runUnarchive = async (task: ZCodeTaskMeta) => {
     try {
       await service.unarchiveTask({
         taskId: task.taskId,
@@ -169,234 +177,231 @@ export function ExplorerScreen({
       });
       await loadArchived();
       onMutated();
-      Toast.show({ content: "Task unarchived", icon: "ok" });
+      toast.show("Task unarchived", { tone: "ok" });
     } catch (error) {
-      failToast(error, "Unarchive failed");
+      toast.show(`Unarchive failed: ${error instanceof Error ? error.message : String(error)}`, {
+        tone: "fail",
+      });
     }
   };
 
-  const deleteTask = (task: ZCodeTaskMeta, archived: boolean) => {
-    confirmAction({
-      title: archived ? "Delete archived task?" : "Delete task?",
-      message: task.title,
-      confirmLabel: "Delete",
-      onConfirm: async () => {
-        try {
-          if (archived) {
-            await service.deleteArchivedTask({
-              taskId: task.taskId,
-              workspacePath: workspace.path,
-              workspaceIdentity: workspace.workspaceIdentity,
-            });
-            await loadArchived();
-          } else {
-            await service.deleteTask({
-              taskId: task.taskId,
-              workspacePath: workspace.path,
-              workspaceIdentity: workspace.workspaceIdentity,
-            });
-          }
-          if (task.taskId === activeTaskId) onTaskUnavailable(task.taskId);
-          onMutated();
-          Toast.show({ content: "Task deleted", icon: "ok" });
-        } catch (error) {
-          failToast(error, "Delete failed");
-        }
-      },
-    });
+  const runDelete = async (task: ZCodeTaskMeta, wasArchived: boolean) => {
+    try {
+      if (wasArchived) {
+        await service.deleteArchivedTask({
+          taskId: task.taskId,
+          workspacePath: workspace.path,
+          workspaceIdentity: workspace.workspaceIdentity,
+        });
+        await loadArchived();
+      } else {
+        await service.deleteTask({
+          taskId: task.taskId,
+          workspacePath: workspace.path,
+          workspaceIdentity: workspace.workspaceIdentity,
+        });
+      }
+      if (task.taskId === activeTaskId) onTaskUnavailable(task.taskId);
+      onMutated();
+      toast.show("Task deleted", { tone: "ok" });
+    } catch (error) {
+      toast.show(`Delete failed: ${error instanceof Error ? error.message : String(error)}`, {
+        tone: "fail",
+      });
+    }
   };
 
-  const swipeActions = (task: ZCodeTaskMeta) => [
-    {
-      key: "archive",
-      text: "Archive",
-      color: "warning" as const,
-      onClick: () => void archiveTask(task),
-    },
-    {
-      key: "delete",
-      text: "Delete",
-      color: "danger" as const,
-      onClick: () => deleteTask(task, false),
-    },
-  ];
-
-  const rowMenu = (task: ZCodeTaskMeta, archived: boolean) => (
-    <Popover.Menu
-      actions={
-        archived
-          ? [
-              { key: "unarchive", text: "Unarchive" },
-              { key: "delete", text: "Delete" },
-            ]
-          : [
-              { key: "archive", text: "Archive" },
-              { key: "delete", text: "Delete" },
-            ]
-      }
-      onAction={(node) => {
-        if (node.key === "archive") void archiveTask(task);
-        if (node.key === "unarchive") void unarchiveTask(task);
-        if (node.key === "delete") deleteTask(task, archived);
-      }}
-      trigger="click"
-    >
-      <button className="row-actions" aria-label="Task actions">
-        <MoreHorizontal size={16} />
-      </button>
-    </Popover.Menu>
-  );
+  const runDeleteAll = async () => {
+    try {
+      await service.deleteArchivedTasks({
+        workspacePath: workspace.path,
+        workspaceIdentity: workspace.workspaceIdentity,
+        taskIds: sortedArchived.map((item) => item.taskId),
+      });
+      await loadArchived();
+      onMutated();
+      toast.show("Archived tasks deleted", { tone: "ok" });
+    } catch (error) {
+      toast.show(`Delete failed: ${error instanceof Error ? error.message : String(error)}`, {
+        tone: "fail",
+      });
+    }
+  };
 
   return (
     <>
-      <NavBar
-        back={null}
-        left={
-          <span className="brand">
-            ZCode <span className="brand-sub">mobile</span>
-          </span>
-        }
-        right={
-          <button className="icon-btn new-task" onClick={onCreateTask} aria-label="New task">
-            <Plus size={18} />
-          </button>
-        }
-      >
-        {" "}
-      </NavBar>
+      <header className="topbar">
+        <div className="topbar-brand">
+          ZCode<span className="topbar-brand-sub">mobile</span>
+        </div>
+        <button className="topbar-action" onClick={onCreateTask} aria-label="New task">
+          <Plus size={18} />
+        </button>
+      </header>
 
       {workspaces.length > 1 ? (
-        <div className="ws-capsule">
-          <CapsuleTabs
-            activeKey={String(workspaceIndex)}
-            onChange={(key) => onWorkspaceIndexChange(Number(key))}
-          >
-            {workspaces.map((item, index) => (
-              <CapsuleTabs.Tab key={String(index)} title={workspaceLabel(item)} />
-            ))}
-          </CapsuleTabs>
-        </div>
+        <button className="ws-picker" onClick={() => setWsOpen(true)}>
+          <FolderGit2 size={13} />
+          <span className="ws-picker-label">{workspaceLabel(workspace)}</span>
+          <ChevronDown size={13} />
+        </button>
       ) : (
-        <div className="ws-line">
-          <FolderOpen size={14} />
-          {workspaceLabel(workspace)}
+        <div className="ws-static">
+          <FolderGit2 size={12} />
+          <span>{workspaceLabel(workspace)}</span>
         </div>
       )}
 
       <div className="list-scroll">
-        {sorted.length === 0 && <div className="empty">No tasks yet — create one.</div>}
+        {sorted.length === 0 ? (
+          <div className="empty explorer-empty">
+            <p>No tasks.</p>
+            <span>tap + to start one</span>
+          </div>
+        ) : null}
+
         {sorted.map((task) => (
-          <SwipeAction key={task.taskId} className="task-swipe" rightActions={swipeActions(task)}>
-            <div style={{ display: "flex", alignItems: "stretch" }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <TaskRow
-                  task={task}
-                  active={task.taskId === activeTaskId}
-                  archived={false}
-                  onOpen={() => onOpenTask(task)}
-                />
-              </div>
-              {rowMenu(task, false)}
-            </div>
-          </SwipeAction>
+          <TaskRow
+            key={task.taskId}
+            task={task}
+            active={task.taskId === activeTaskId}
+            archived={false}
+            onOpen={() => onOpenTask(task)}
+            onMenu={() => setMenuTask({ task, archived: false })}
+          />
         ))}
 
-        <Collapse
-          activeKey={archivedOpen ? ["archived"] : []}
-          onChange={(keys) => setArchivedOpen(keys.includes("archived"))}
-          style={{ marginTop: 8 }}
-        >
-          <Collapse.Panel key="archived" title={`Archived${archived.length > 0 ? ` (${archived.length})` : ""}`}>
-            {archivedLoading && archived.length === 0 && <div className="info-note">Loading…</div>}
-            {!archivedLoading && sortedArchived.length === 0 && (
-              <div className="info-note">Nothing archived.</div>
-            )}
-            {sortedArchived.map((task) => (
-              <div key={task.taskId} className="task-swipe">
-                <div style={{ display: "flex", alignItems: "stretch" }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <TaskRow
-                      task={task}
-                      active={false}
-                      archived
-                      onOpen={() => setPicker({ task, archived: true })}
-                    />
-                  </div>
-                  {rowMenu(task, true)}
-                </div>
-              </div>
-            ))}
-            {sortedArchived.length > 0 && (
-              <button
-                className="delete-all-btn"
-                onClick={() =>
-                  confirmAction({
-                    title: "Delete ALL archived tasks?",
-                    message: `${sortedArchived.length} task(s) will be removed permanently.`,
-                    confirmLabel: "Delete all",
-                    onConfirm: async () => {
-                      try {
-                        await service.deleteArchivedTasks({
-                          workspacePath: workspace.path,
-                          workspaceIdentity: workspace.workspaceIdentity,
-                          taskIds: sortedArchived.map((item) => item.taskId),
-                        });
-                        await loadArchived();
-                        Toast.show({ content: "Archived tasks deleted", icon: "ok" });
-                      } catch (error) {
-                        failToast(error, "Delete failed");
-                      }
-                    },
-                  })
-                }
-              >
-                <span className="archived-extra">
+        <div className="archived-block">
+          <button
+            className="archived-toggle"
+            onClick={() => setArchivedOpen((open) => !open)}
+            aria-expanded={archivedOpen}
+          >
+            <ChevronDown size={13} className={`chev${archivedOpen ? " open" : ""}`} />
+            <span>Archived</span>
+            {archived.length > 0 ? <span className="archived-count">{archived.length}</span> : null}
+          </button>
+
+          {archivedOpen ? (
+            <div className="archived-list">
+              {archivedLoading && sortedArchived.length === 0 ? (
+                <div className="note">Loading…</div>
+              ) : null}
+              {!archivedLoading && sortedArchived.length === 0 ? (
+                <div className="note">Nothing archived.</div>
+              ) : null}
+              {sortedArchived.map((task) => (
+                <TaskRow
+                  key={task.taskId}
+                  task={task}
+                  active={false}
+                  archived
+                  onOpen={() => onOpenTask(task)}
+                  onMenu={() => setMenuTask({ task, archived: true })}
+                />
+              ))}
+              {sortedArchived.length > 0 ? (
+                <button
+                  className="archived-clear"
+                  onClick={() => setConfirm({ kind: "delete-all", count: sortedArchived.length })}
+                >
                   <Trash2 size={13} /> Delete all archived
-                </span>
-              </button>
-            )}
-          </Collapse.Panel>
-        </Collapse>
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
       </div>
 
-      {picker && (
-        <ActionSheet
-          visible
-          extra={picker.task.title}
-          cancelText="Cancel"
-          closeOnAction
-          actions={
-            picker.archived
-              ? [
-                  { key: "unarchive", text: "Unarchive" },
-                  { key: "delete", text: "Delete" },
-                ]
-              : [
-                  { key: "open", text: "Open" },
-                  { key: "archive", text: "Archive" },
-                  { key: "delete", text: "Delete" },
-                ]
-          }
-          onAction={(action) => {
-            const { task, archived: wasArchived } = picker;
-            setPicker(null);
-            if (wasArchived) {
-              if (action.key === "unarchive") void unarchiveTask(task);
-              if (action.key === "delete") deleteTask(task, true);
-              return;
-            }
-            if (action.key === "open") onOpenTask(task);
-            if (action.key === "archive") void archiveTask(task);
-            if (action.key === "delete") deleteTask(task, false);
-          }}
-          onClose={() => setPicker(null)}
-        />
-      )}
+      {wsOpen ? (
+        <Sheet title="Workspace" onClose={() => setWsOpen(false)}>
+          {workspaces.map((item, index) => (
+            <button
+              key={`${item.path}-${index}`}
+              className={`option-row${index === workspaceIndex ? " selected" : ""}`}
+              onClick={() => {
+                setWsOpen(false);
+                onWorkspaceIndexChange(index);
+              }}
+            >
+              <span className="option-row-main">
+                <span className="option-row-label">{workspaceLabel(item)}</span>
+                <span className="option-row-sub">{item.path}</span>
+              </span>
+              {index === workspaceIndex ? <span className="option-check">✓</span> : null}
+            </button>
+          ))}
+        </Sheet>
+      ) : null}
 
-      {archivedLoading && archivedOpen ? (
-        <div className="empty">
-          <DotLoading color="primary" />
-        </div>
+      {menuTask ? (
+        <Sheet title={menuTask.task.title} onClose={() => setMenuTask(null)}>
+          {menuTask.archived ? (
+            <button
+              className="option-row"
+              onClick={() => {
+                const { task } = menuTask;
+                setMenuTask(null);
+                void runUnarchive(task);
+              }}
+            >
+              <span className="option-row-main">
+                <span className="option-row-label">
+                  <ArchiveRestore size={14} /> Unarchive
+                </span>
+              </span>
+            </button>
+          ) : (
+            <button
+              className="option-row"
+              onClick={() => {
+                const { task } = menuTask;
+                setMenuTask(null);
+                void runArchive(task);
+              }}
+            >
+              <span className="option-row-main">
+                <span className="option-row-label">
+                  <Archive size={14} /> Archive
+                </span>
+              </span>
+            </button>
+          )}
+          <button
+            className="option-row danger"
+            onClick={() => {
+              const { task, archived: wasArchived } = menuTask;
+              setMenuTask(null);
+              setConfirm({ kind: "delete", task, archived: wasArchived });
+            }}
+          >
+            <span className="option-row-main">
+              <span className="option-row-label">
+                <Trash2 size={14} /> Delete
+              </span>
+            </span>
+          </button>
+        </Sheet>
+      ) : null}
+
+      {confirm?.kind === "delete" ? (
+        <ConfirmSheet
+          title={confirm.archived ? "Delete archived task?" : "Delete task?"}
+          message={confirm.task.title}
+          confirmLabel="Delete"
+          onConfirm={() => void runDelete(confirm.task, confirm.archived)}
+          onClose={() => setConfirm(null)}
+        />
+      ) : null}
+
+      {confirm?.kind === "delete-all" ? (
+        <ConfirmSheet
+          title="Delete ALL archived tasks?"
+          message={`${confirm.count} task(s) will be removed permanently.`}
+          confirmLabel="Delete all"
+          onConfirm={() => void runDeleteAll()}
+          onClose={() => setConfirm(null)}
+        />
       ) : null}
     </>
   );

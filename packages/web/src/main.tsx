@@ -349,6 +349,13 @@ function createWebPlatform(): IPlatformService {
       ];
       return parts.filter(Boolean).join("|");
     },
+    startMobileDirectConnection: () =>
+      Promise.resolve({ state: "stopped", bindMode: "loopback", connectedClients: 0 }),
+    stopMobileDirectConnection: () =>
+      Promise.resolve({ state: "stopped", bindMode: "loopback", connectedClients: 0 }),
+    getMobileDirectConnectionStatus: () =>
+      Promise.resolve({ state: "stopped", bindMode: "loopback", connectedClients: 0 }),
+    onMobileDirectConnectionChanged: () => () => {},
   };
 }
 
