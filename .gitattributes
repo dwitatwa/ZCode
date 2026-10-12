@@ -14,3 +14,7 @@ third-party/runtime/*.txt -text -whitespace
 docs/knip/docs/LICENSE -text -whitespace
 docs/knip/docs/licenses/** -text -whitespace
 third-party/inventory.json linguist-generated=true
+
+# Gen UI vendor asset snapshots are hash-verified at build time; byte content must not
+# be line-ending converted by core.autocrlf on Windows checkouts.
+apps/zcode-cli/packages/visualize-plugin/skills/visualize/assets/** -text
