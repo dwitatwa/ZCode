@@ -12,7 +12,6 @@ import {
   rendererLogPayloadSchema,
   startMobileDirectConnectionRequestSchema,
   stringArraySchema,
-  webRemoteControlTaskTargetsSchema,
   webRemoteControlWorkspaceTargetsSchema,
   type DesktopCommandId,
   type ApplicationIconRequest,
@@ -26,7 +25,6 @@ import {
   type MobileDirectConnectionStatus,
   type StartMobileDirectConnectionRequest,
   type UpdateStatePayload,
-  type WebRemoteControlTaskTarget,
   type WebRemoteControlWorkspaceTarget,
   type WindowControlsOverlayReadyPayload,
 } from "@zcode/shared";
@@ -89,17 +87,12 @@ export function registerPlatformIpcHandlers(options: {
   acknowledgePostUpdateReleaseNotes: (version: string) => Promise<void>;
   syncActiveTaskSession: (windowId: number, sessionId: string | null) => void;
   syncTaskRealtimeWorkspaceKeys: (windowId: number, workspaceKeys: Iterable<string>) => void;
-  restorePreviouslyEnabledWebRemoteControl: (
-    windowId: number,
-    contexts: Array<{ workspacePath: string }>,
-  ) => void;
   getUpdateState: () => UpdateStatePayload;
   openUpdateStatusWindow: () => void;
   syncWebRemoteControlWorkspaces: (
     windowId: number,
     workspaces: WebRemoteControlWorkspaceTarget[],
   ) => void;
-  syncWebRemoteControlTasks: (windowId: number, tasks: WebRemoteControlTaskTarget[]) => void;
   getDesktopSessionActivity: () => {
     runningAgentSessionCount: number;
   };
@@ -289,10 +282,6 @@ export function registerPlatformIpcHandlers(options: {
     if (win) {
       options.windowWorkspaceMap.set(win.id, new Set(result.data));
       options.syncTaskRealtimeWorkspaceKeys(win.id, result.data);
-      options.restorePreviouslyEnabledWebRemoteControl(
-        win.id,
-        result.data.map((workspacePath) => ({ workspacePath })),
-      );
     }
   });
 
@@ -312,24 +301,6 @@ export function registerPlatformIpcHandlers(options: {
     }
 
     options.syncWebRemoteControlWorkspaces(win.id, result.data);
-  });
-
-  ipcMain.on(PlatformChannels.SyncWebRemoteControlTasks, (event, payload: unknown) => {
-    const result = webRemoteControlTaskTargetsSchema.safeParse(payload);
-    if (!result.success) {
-      options.logger.warn(
-        "[sync-web-remote-control-tasks] invalid payload:",
-        formatZodError(result.error),
-      );
-      return;
-    }
-
-    const win = BrowserWindow.fromWebContents(event.sender);
-    if (!win) {
-      return;
-    }
-
-    options.syncWebRemoteControlTasks(win.id, result.data);
   });
 
   ipcMain.on(PlatformChannels.SyncWindowUnreadCount, (event, payload: unknown) => {

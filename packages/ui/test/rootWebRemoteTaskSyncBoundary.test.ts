@@ -24,6 +24,8 @@ describe("Root Web remote task sync subscription boundary", () => {
     // Root 不能为了远控 task 索引订阅整张 workspace 表，否则流式更新会唤醒整棵 shell。
     expect(rootInnerSource).not.toContain("useZCodeSessionStore((state) => state.workspaces)");
     expect(webRemoteTaskSyncSource).toContain("useZCodeSessionStore((state) => state.workspaces)");
-    expect(rootSource).toMatch(/hasCompletedFullRestore\s*&&\s*webRemoteControlTaskSyncEnabled/);
+    expect(rootSource).toMatch(
+      /hasCompletedFullRestore\s*&&\s*webRemoteControlFeatureEnabled\s*&&\s*platform\.syncWebRemoteControlTasks/,
+    );
   });
 });

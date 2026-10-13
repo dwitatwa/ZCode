@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { Smartphone } from "lucide-react";
-import type { WebRemoteControlStatus } from "@zcode/shared";
 import {
   buildWebRemoteControlEntryViewTelemetry,
   parseRemoteWorkspaceIdentity,
@@ -10,68 +9,11 @@ import { cn } from "@/components/lib/utils.js";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
 import { useResolvedRemoteWorkspaceSessionId } from "@/hooks/useResolvedRemoteWorkspaceSessionId.js";
 import { useOptionalPlatform } from "@/hooks/usePlatform.js";
-import { useWebRemoteControlStatus } from "@/hooks/useWebRemoteControlStatus.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { logger } from "@/logger.js";
 import { reportAppTelemetryEvent } from "@/lib/appTelemetry.js";
 import { WebRemoteControlDialog } from "@/WebRemoteControlDialog.js";
 import { useWebRemoteControlFeatureEnabled } from "@/WebRemoteControlFeatureProvider.js";
-
-type FormatMessage = ReturnType<typeof useZCodeIntl>["intl"]["formatMessage"];
-
-export function getWebRemoteControlTriggerPresentation(
-  status: Pick<WebRemoteControlStatus, "status" | "mobileConnected">,
-  formatMessage: FormatMessage,
-): { iconClassName: string; tooltip: string } {
-  if (status.status === "error") {
-    return {
-      iconClassName: "text-destructive",
-      tooltip: formatMessage({ id: "webRemoteControl.triggerStatus.error" }),
-    };
-  }
-
-  if (status.status === "active") {
-    // Bugfix: relay 重连时 main 可能先把 status 降到 starting/running，
-    // 但 mobileConnected 仍保留上一轮配对状态。按钮只按 active 显示已连接，
-    // 避免和打开弹层后的真实连接阶段文案不一致。
-    return {
-      iconClassName: "text-success",
-      tooltip: formatMessage({
-        id: "webRemoteControl.triggerStatus.connected",
-      }),
-    };
-  }
-
-  if (status.status === "starting") {
-    return {
-      iconClassName: "text-warning",
-      tooltip: formatMessage({
-        id: "webRemoteControl.triggerStatus.starting",
-      }),
-    };
-  }
-
-  if (status.status === "connecting") {
-    return {
-      iconClassName: "text-warning",
-      tooltip: formatMessage({
-        id: "webRemoteControl.triggerStatus.connecting",
-      }),
-    };
-  }
-
-  if (status.status === "running") {
-    return {
-      iconClassName: "text-warning",
-      tooltip: formatMessage({ id: "webRemoteControl.triggerStatus.waiting" }),
-    };
-  }
-
-  return {
-    iconClassName: "text-foreground-subtle",
-    tooltip: formatMessage({ id: "webRemoteControl.triggerStatus.idle" }),
-  };
-}
 
 export function WorkspaceWebRemoteControlTrigger({
   workspacePath,
@@ -135,17 +77,11 @@ function WorkspaceWebRemoteControlTriggerContent({
   // resolver 按 identity 校验后的 live session，未恢复时让弹层保持 remote-waiting。
   const currentRemoteSessionId = mappedRemoteSessionId ?? undefined;
   const [webRemoteControlOpen, setWebRemoteControlOpen] = useState(false);
-  const remoteControlStatus = useWebRemoteControlStatus();
-  const triggerPresentation = getWebRemoteControlTriggerPresentation(
-    remoteControlStatus,
-    intl.formatMessage,
-  );
 
   return (
     <>
       <ControlHintTooltip
         title={intl.formatMessage({ id: "webRemoteControl.trigger" })}
-        description={triggerPresentation.tooltip}
         side="top"
         align="center"
         triggerClassName={compact ? undefined : "w-full"}
@@ -183,10 +119,7 @@ function WorkspaceWebRemoteControlTriggerContent({
             className,
           )}
         >
-          {/* Bugfix: 触发入口以前只显示固定手机图标，用户无法从桌面端判断手机是否已连上。
-              这里复用远控状态轮询结果，用语义色表达连接状态，并把入口名称和状态文案合进同一个 tooltip，
-              避免桌面端 footer 外层和按钮内层同时弹出两份提示。 */}
-          <Smartphone className={cn("size-4", triggerPresentation.iconClassName)} />
+          <Smartphone className="size-4" />
           {compact ? (
             <span className="sr-only">
               {intl.formatMessage({ id: "webRemoteControl.trigger" })}

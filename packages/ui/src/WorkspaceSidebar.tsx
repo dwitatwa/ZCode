@@ -79,7 +79,6 @@ import { useZCodeStore } from "@/store/StoreProvider.js";
 import { useTabStore } from "@/store/TabStoreProvider.js";
 import { isWorkspaceReadOnly, isWorkspaceTab, type WorkspaceTabState } from "@/store/tabStore.js";
 import { useWorkspaceTaskLists } from "@/hooks/useWorkspaceTaskLists.js";
-import { useWebRemoteControlStatus } from "@/hooks/useWebRemoteControlStatus.js";
 import {
   persistSidebarTaskPreferences,
   readSidebarTaskPreferences,
@@ -123,7 +122,6 @@ import { WorkspaceTimelineTasksSection } from "@/WorkspaceTimelineTasksSection.j
 import { WorkspaceGroupedTasksSection } from "@/WorkspaceGroupedTasksSection.js";
 import { StickyGroupHeaderSlot } from "@/workspace-grouped-tasks/sticky-group-header-slot.js";
 import type { CreateTaskRequest } from "@/app-shell/types.js";
-import { useWebRemoteControlFeatureEnabled } from "@/WebRemoteControlFeatureProvider.js";
 import {
   SortableWorkspaceSidebarItem,
   restrictVerticalDragWithinContainer,
@@ -349,8 +347,6 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
     [onSelectTask],
   );
   const { openCodingPlanUpgrade } = useCodingPlanUpgradeDialog();
-  const webRemoteControlFeatureEnabled = useWebRemoteControlFeatureEnabled();
-  const bumpTaskListVersion = useZCodeSessionStore((state) => state.bumpTaskListVersion);
   const workspaceIdentity = useTabStore((state) => {
     if (!state.activeTabId) {
       return undefined;
@@ -699,23 +695,8 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
     visibleLimitByWorkspaceKey: workspaceTaskVisibleLimitByKey,
     defaultVisibleLimit: WORKSPACE_TASK_PAGE_SIZE,
   });
-  const webRemoteControlStatus = useWebRemoteControlStatus({
-    enabled: isDesktop && webRemoteControlFeatureEnabled,
-  });
-  const mobileActiveTaskKey = useMemo(() => {
-    const mobileViewState = webRemoteControlStatus.mobileViewState;
-    if (
-      !webRemoteControlStatus.mobileConnected ||
-      !mobileViewState?.activeWorkspaceKey ||
-      !mobileViewState.activeTaskId
-    ) {
-      return null;
-    }
-
-    // Bugfix: main 进程已经保存手机端当前 task，但桌面 task 列表没有订阅该状态。
-    // 这里用 workspaceIdentity 语义的 workspaceKey 组合 taskId，保证远程 workspace 不会按路径误匹配。
-    return `${mobileViewState.activeWorkspaceKey}:${mobileViewState.activeTaskId}`;
-  }, [webRemoteControlStatus.mobileConnected, webRemoteControlStatus.mobileViewState]);
+  // 云端 relay 已移除：桌面不再订阅手机端 view state，保留该 prop 以维持子组件接口。
+  const mobileActiveTaskKey: string | null = null;
   const workspaceTaskGroupByKey = useMemo(
     () =>
       new Map(
@@ -735,39 +716,6 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
     setFileTreeTarget(target);
     setIsFileTreeOpen(true);
   }, []);
-  const mobileMissingTaskRefreshRef = useRef<string | null>(null);
-  useEffect(() => {
-    const mobileViewState = webRemoteControlStatus.mobileViewState;
-    const mobileWorkspaceKey = mobileViewState?.activeWorkspaceKey?.trim() ?? "";
-    const mobileTaskId = mobileViewState?.activeTaskId?.trim() ?? "";
-    if (!webRemoteControlStatus.mobileConnected || !mobileWorkspaceKey || !mobileTaskId) {
-      mobileMissingTaskRefreshRef.current = null;
-      return;
-    }
-
-    const taskGroup = workspaceTaskGroupByKey.get(mobileWorkspaceKey);
-    const hasTask = taskGroup?.items.some((task) => task.taskId === mobileTaskId) ?? false;
-    if (hasTask) {
-      mobileMissingTaskRefreshRef.current = null;
-      return;
-    }
-
-    const dedupeKey = `${mobileWorkspaceKey}:${mobileTaskId}`;
-    if (mobileMissingTaskRefreshRef.current === dedupeKey) {
-      return;
-    }
-    mobileMissingTaskRefreshRef.current = dedupeKey;
-    // Bugfix: 手机端已切到新任务但桌面列表偶发未及时收敛（例如跨端事件先后顺序抖动）时，
-    // 这里按 mobileViewState 主动触发一次 workspace 列表重查，避免任务一直"手机可见、桌面缺失"。
-    bumpTaskListVersion(workspacePath, workspaceIdentity);
-  }, [
-    bumpTaskListVersion,
-    webRemoteControlStatus.mobileConnected,
-    webRemoteControlStatus.mobileViewState,
-    workspaceIdentity,
-    workspacePath,
-    workspaceTaskGroupByKey,
-  ]);
   const workspaceScrollMaskStyle = useMemo<CSSProperties>(() => {
     const baseStyle: CSSProperties = { overflowAnchor: "none" };
     if (!showWorkspaceTopMask && !showWorkspaceBottomMask) {

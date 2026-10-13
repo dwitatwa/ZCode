@@ -82,7 +82,6 @@ import {
   useWebRemoteControlFeatureEnabled,
 } from "@/WebRemoteControlFeatureProvider.js";
 import { useRemoteConnectionLogs } from "@/hooks/useRemoteConnectionLogs.js";
-import { useWebRemoteControlStatus } from "@/hooks/useWebRemoteControlStatus.js";
 import {
   CODE_COMMENT_REMOVE_BROADCAST_CHANNEL,
   CODE_COMMENT_PREVIEW_RESTORE_BROADCAST_CHANNEL,
@@ -544,21 +543,6 @@ function RootInner({
   const activateTabByPath = useTabStore((state) => state.activateTabByPath);
   const tabStoreApi = useTabStoreApi();
   const webRemoteControlFeatureEnabled = useWebRemoteControlFeatureEnabled();
-  // Bugfix: WebRemoteControlDialog 只是可开关的展示入口，不能由它的本地 state 决定全局远控状态。
-  // Root 直接轮询 main 进程状态，确保任务快照同步只跟真实远控会话 running/active 绑定。
-  const webRemoteControlStatus = useWebRemoteControlStatus({
-    enabled: Boolean(
-      webRemoteControlFeatureEnabled && isDesktop && platform.syncWebRemoteControlTasks,
-    ),
-  });
-  const webRemoteControlSessionActive =
-    webRemoteControlStatus.status === "running" || webRemoteControlStatus.status === "active";
-  const webRemoteControlTaskSyncEnabled = Boolean(
-    webRemoteControlFeatureEnabled &&
-    webRemoteControlSessionActive &&
-    isDesktop &&
-    platform.syncWebRemoteControlTasks,
-  );
   const refreshProviderState = useRootProviderStateRefresh(services);
   useRootProviderSettingsSnapshot(services);
   useEffect(() => {
@@ -814,7 +798,7 @@ function RootInner({
 
   const webRemoteControlTaskSyncNode =
     hasCompletedFullRestore &&
-    webRemoteControlTaskSyncEnabled &&
+    webRemoteControlFeatureEnabled &&
     platform.syncWebRemoteControlTasks ? (
       <WebRemoteControlTaskSync
         syncWebRemoteControlTasks={platform.syncWebRemoteControlTasks}
@@ -895,11 +879,7 @@ function RootInner({
     tabs,
     activeWorkspacePath,
     activeWorkspaceIdentity,
-    reconnectingRemoteWorkspaceKeys,
-    remoteWorkspaceErrorByWorkspaceKey,
     totalUnreadTaskCount,
-    webRemoteControlFeatureEnabled,
-    webRemoteControlSessionActive,
     hasCompletedFullTabRestore: hasCompletedFullRestore,
     intl,
     isRestoringOAuthSession: isResolvingStartupAuthState || providerStartupSyncPending,

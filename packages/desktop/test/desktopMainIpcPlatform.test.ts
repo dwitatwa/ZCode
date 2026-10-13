@@ -177,9 +177,10 @@ describe("registerPlatformIpcHandlers", () => {
     expect(syncWindowControlsOverlayForZoomLevel).toHaveBeenCalledWith(targetWindow, 2);
   });
 
-  it("offers restored local workspace contexts to Web remote control startup recovery", async () => {
+  it("syncs window tab workspaces to main without the removed relay startup recovery", async () => {
     const { registerPlatformIpcHandlers } = await import("../src/main/desktopMainIpcPlatform.js");
-    const restorePreviouslyEnabledWebRemoteControl = vi.fn();
+    const syncTaskRealtimeWorkspaceKeys = vi.fn();
+    const windowWorkspaceMap = new Map<number, Set<string>>();
     const targetWindow = { id: 7 };
     electronMocks.browserWindowFromWebContents.mockReturnValue(targetWindow);
 
@@ -187,16 +188,14 @@ describe("registerPlatformIpcHandlers", () => {
       logger: { info: vi.fn(), warn: vi.fn() },
       applyApplicationLocale: vi.fn(async () => {}),
       focusWorkspaceInExistingWindow: vi.fn(() => ({ activated: false })),
-      windowWorkspaceMap: new Map(),
+      windowWorkspaceMap,
       windowUnreadCountMap: new Map(),
       currentApplicationLocale: () => "en-US",
       executeDesktopCommand: vi.fn(async () => {}),
       acknowledgePostUpdateReleaseNotes: vi.fn(async () => {}),
-      syncTaskRealtimeWorkspaceKeys: vi.fn(),
-      restorePreviouslyEnabledWebRemoteControl,
+      syncTaskRealtimeWorkspaceKeys,
       getUpdateState: vi.fn(() => ({ status: "idle" })),
       syncWebRemoteControlWorkspaces: vi.fn(),
-      syncWebRemoteControlTasks: vi.fn(),
       deviceMid: "test-device-mid",
     });
 
@@ -205,9 +204,10 @@ describe("registerPlatformIpcHandlers", () => {
       "/workspace/two",
     ]);
 
-    expect(restorePreviouslyEnabledWebRemoteControl).toHaveBeenCalledWith(7, [
-      { workspacePath: "/workspace/one" },
-      { workspacePath: "/workspace/two" },
+    expect(windowWorkspaceMap.get(7)).toEqual(new Set(["/workspace/one", "/workspace/two"]));
+    expect(syncTaskRealtimeWorkspaceKeys).toHaveBeenCalledWith(7, [
+      "/workspace/one",
+      "/workspace/two",
     ]);
   });
 

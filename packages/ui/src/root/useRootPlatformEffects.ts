@@ -12,7 +12,6 @@ import { isShortcutRecordingActive } from "@/shortcuts/bindings.js";
 import { isRendererReloadNavigation } from "@/lib/rendererNavigation.js";
 import {
   buildConnectedRemoteWorkspaceSessionTargets,
-  buildWebRemoteControlWorkspaceTargets,
   shouldPublishCompleteWorkspaceSnapshot,
 } from "@/root/rootPlatformWorkspaceSync.js";
 import { useOptionalBaseWorkspaceServices } from "@/hooks/useWorkspaceServices.js";
@@ -44,11 +43,7 @@ export function useRootPlatformEffects({
   tabs,
   activeWorkspacePath,
   activeWorkspaceIdentity,
-  reconnectingRemoteWorkspaceKeys = [],
-  remoteWorkspaceErrorByWorkspaceKey = {},
   totalUnreadTaskCount,
-  webRemoteControlFeatureEnabled = false,
-  webRemoteControlSessionActive = false,
   hasCompletedFullTabRestore = true,
   intl,
   isRestoringOAuthSession,
@@ -79,11 +74,7 @@ export function useRootPlatformEffects({
   tabs: WindowTabState[];
   activeWorkspacePath?: string | null;
   activeWorkspaceIdentity?: string | null;
-  reconnectingRemoteWorkspaceKeys?: string[];
-  remoteWorkspaceErrorByWorkspaceKey?: Record<string, string>;
   totalUnreadTaskCount: number;
-  webRemoteControlFeatureEnabled?: boolean;
-  webRemoteControlSessionActive?: boolean;
   hasCompletedFullTabRestore?: boolean;
   intl: ReturnType<typeof import("@/i18n/IntlProvider.js").useZCodeIntl>["intl"];
   isRestoringOAuthSession: boolean;
@@ -528,28 +519,7 @@ export function useRootPlatformEffects({
       // 之前这条绑定复用 Web 远控 workspace 同步，Web 远控未开启时不会执行，导致 UI 已连接但 Bot 误判未连接。
       platform.syncWebRemoteControlWorkspaces(connectedRemoteWorkspaces);
     }
-
-    if (!webRemoteControlFeatureEnabled || !webRemoteControlSessionActive) {
-      return;
-    }
-
-    const workspaces = buildWebRemoteControlWorkspaceTargets({
-      tabs,
-      reconnectingRemoteWorkspaceKeys,
-      remoteWorkspaceErrorByWorkspaceKey,
-    });
-
-    platform.syncWebRemoteControlWorkspaces(workspaces);
-  }, [
-    hasCompletedFullTabRestore,
-    isDesktop,
-    platform,
-    reconnectingRemoteWorkspaceKeys,
-    remoteWorkspaceErrorByWorkspaceKey,
-    tabs,
-    webRemoteControlFeatureEnabled,
-    webRemoteControlSessionActive,
-  ]);
+  }, [hasCompletedFullTabRestore, isDesktop, platform, tabs]);
 
   useEffect(() => {
     if (isDesktop) {
