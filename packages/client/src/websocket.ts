@@ -20,6 +20,21 @@ interface WebSocketConnectionOptions {
   onOpenSocket?: (socket: WebSocket) => void;
 }
 
+/**
+ * 从 URL 里去掉 query 再用于报错。
+ *
+ * 直连 URL 带 `?token=...`,而连接失败的原因会被手机原样显示在屏幕上;把整个 URL
+ * 塞进错误信息等于把凭据写进 UI、日志和截图。
+ */
+function redactWebSocketUrl(wsUrl: string): string {
+  try {
+    const parsed = new URL(wsUrl);
+    return `${parsed.protocol}//${parsed.host}${parsed.pathname}`;
+  } catch {
+    return wsUrl.split("?")[0] ?? wsUrl;
+  }
+}
+
 function wrapBrowserWebSocket(ws: WebSocket): ISocket {
   const onData = new Emitter<VSBuffer>();
   const onClose = new Emitter<void>();
@@ -69,15 +84,23 @@ export function connectViaWebSocket(
 
     ws.addEventListener("error", () => {
       if (!settled) {
-        reject(new Error(`WebSocket connection failed: ${wsUrl}`));
+        reject(new Error(`WebSocket connection failed: ${redactWebSocketUrl(wsUrl)}`));
       }
     });
     ws.addEventListener("close", (event) => {
-      options?.onClose?.({
-        code: event.code,
-        reason: event.reason,
-        wasClean: event.wasClean,
-      });
+      // onClose 只报告「已建立的连接后来断开」。
+      //
+      // 握手失败时浏览器也会发 close(1006),而那时 connectViaWebSocket 的 promise
+      // 还没 settle,拒绝原因由下面的 reject 给出。若在这里也回调 onClose,调用方
+      // 会先收到一个没有信息量的 1006,把真正的失败原因覆盖掉 —— 手机端就表现为
+      // 「Connection closed (1006)」而不是实际错误。
+      if (settled) {
+        options?.onClose?.({
+          code: event.code,
+          reason: event.reason,
+          wasClean: event.wasClean,
+        });
+      }
 
       if (!settled) {
         reject(

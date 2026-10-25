@@ -1,5 +1,15 @@
 # Bots E2E Coverage Matrix
 
+## BOT-E2E-CF-01 / GR-UI-01 停用 (2026-10-25)
+
+桌面端远控弹窗删除了 Bot Channel 配置入口(BotsDialog 及其全部卡片整体删除),BOT-E2E-CF-01 与
+GR-UI-01 失去了唯一入口,无法再运行,故连同只被其使用的夹具一并删除:
+
+- `bots/feishu-runtime-error-ui.test.ts` (BOT-E2E-CF-01) 及 `fixtures/bots/feishu-runtime-error-ui.json`
+- `bots/feishu-bound-groups-ui.test.ts` (GR-UI-01)
+
+下方的矩阵与证据段落保留原样,是当时的记录;这两条不再是当前覆盖。Bot 服务层与其余六个 bot e2e spec 未受影响。
+
 ## MN-01 / MN-03 转正（2026-10-08）
 
 用户确认将 Feishu/Lark × 群/话题 4 项用例转正，正式入口为 `bots/feishu-channel-mention.test.ts`。

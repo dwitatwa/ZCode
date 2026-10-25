@@ -21,7 +21,7 @@ const NO_LABEL = "no";
 const GIT_SYSTEM_CONTEXT_PREFIX =
   "gitStatus: This is the git status at the start of the conversation. Note that this status is a snapshot in time, and will not update during the conversation.";
 const CURRENT_BRANCH_LABEL = "Current branch";
-const MAIN_BRANCH_LABEL = "Main branch (you will usually use this for PRs)";
+const MAIN_BRANCH_LABEL = "Main branch";
 const GIT_USER_LABEL = "Git user";
 const STATUS_LABEL = "Status";
 const RECENT_COMMITS_LABEL = "Recent commits";

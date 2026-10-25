@@ -44,3 +44,58 @@ vi.mock("node:os", async (importOriginal) => {
     },
   };
 });
+
+// Bugfix: 单测断言 en-US 的数字与时间格式（例如 "12,345"、"08:00:00"）。Node 的默认 Intl locale
+// 取自操作系统，而 Windows 上 LC_ALL/LANG 不生效，所以开发机若是其他 locale（例如 en-ID）会让
+// 这些断言失败，CI 却通过。这里把默认 locale 固定为 en-US，让结果不再依赖宿主机。
+// 只替换“未传入 locale”的调用；显式传入 locale 的调用保持原样。
+// 已知遗留：部分产品调用点用无参 toLocaleString() 跟随宿主机 locale（例如
+// packages/ui/src/app-shell/WorkflowRunSidePaneSections.ts），另一些传入配置的 UI locale。
+// 本 shim 不改变该不一致，只保证测试确定性。
+const TEST_DEFAULT_LOCALE = "en-US";
+const LOCALE_PIN_KEY = Symbol.for("zcode.test.defaultLocalePinned");
+const pinnedGlobals = globalThis as unknown as Record<symbol, unknown>;
+
+// threads pool 下同一 worker 会复跑多个测试文件，而内置原型按 realm 共享；
+// 用标记位保证只包裹一次，避免嵌套包裹层层叠加。
+if (!pinnedGlobals[LOCALE_PIN_KEY]) {
+  pinnedGlobals[LOCALE_PIN_KEY] = true;
+
+  const resolveTestLocale = (locales: string | string[] | undefined): string | string[] =>
+    locales === undefined || (Array.isArray(locales) && locales.length === 0)
+      ? TEST_DEFAULT_LOCALE
+      : locales;
+
+  const pinLocaleMethod = <T extends (...args: never[]) => unknown>(method: T): T =>
+    function (this: unknown, locales?: string | string[], options?: unknown) {
+      return (method as (this: unknown, l?: unknown, o?: unknown) => unknown).call(
+        this,
+        resolveTestLocale(locales),
+        options,
+      );
+    } as unknown as T;
+
+  const pinIntlConstructor = <T extends object>(original: T): T => {
+    const pinned = function (this: unknown, locales?: string | string[], options?: unknown) {
+      return new (original as unknown as new (
+        locales?: string | string[],
+        options?: unknown,
+      ) => object)(resolveTestLocale(locales), options);
+    };
+    // 保留静态成员（supportedLocalesOf）与 prototype，确保 instanceof 仍然成立。
+    Object.setPrototypeOf(pinned, original);
+    Object.defineProperty(pinned, "prototype", {
+      value: (original as { prototype: unknown }).prototype,
+      writable: true,
+    });
+    return pinned as unknown as T;
+  };
+
+  Number.prototype.toLocaleString = pinLocaleMethod(Number.prototype.toLocaleString);
+  BigInt.prototype.toLocaleString = pinLocaleMethod(BigInt.prototype.toLocaleString);
+  Date.prototype.toLocaleString = pinLocaleMethod(Date.prototype.toLocaleString);
+  Date.prototype.toLocaleDateString = pinLocaleMethod(Date.prototype.toLocaleDateString);
+  Date.prototype.toLocaleTimeString = pinLocaleMethod(Date.prototype.toLocaleTimeString);
+  Intl.NumberFormat = pinIntlConstructor(Intl.NumberFormat);
+  Intl.DateTimeFormat = pinIntlConstructor(Intl.DateTimeFormat);
+}

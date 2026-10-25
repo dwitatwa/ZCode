@@ -128,7 +128,7 @@ export function DirectMobileConnectionSection() {
   const isStarting = status.state === "starting" || busy;
 
   return (
-    <section className="flex flex-col rounded-xl border border-border bg-card p-4">
+    <section className="flex min-w-0 flex-col rounded-xl border border-border bg-card p-4">
       <div className="mb-4 flex items-start gap-2">
         <Radio className="mt-0.5 size-4 shrink-0 text-foreground-subtle" />
         <div className="min-w-0 space-y-1">
@@ -146,8 +146,8 @@ export function DirectMobileConnectionSection() {
           {intl.formatMessage({ id: "webRemoteControl.direct.unavailable" })}
         </p>
       ) : (
-        <div className="grid gap-3">
-          <div className="grid gap-2 sm:grid-cols-2">
+        <div className="grid min-w-0 gap-3">
+          <div className="grid min-w-0 gap-2 sm:grid-cols-2">
             {BIND_MODES.map((entry) => {
               const selected = bindMode === entry.mode;
               return (
@@ -156,7 +156,7 @@ export function DirectMobileConnectionSection() {
                   type="button"
                   disabled={isRunning || isStarting}
                   className={cn(
-                    "flex flex-col items-start gap-1 rounded-lg border px-3 py-2 text-left transition-colors enabled:cursor-pointer",
+                    "flex min-w-0 flex-col items-start gap-1 rounded-lg border px-3 py-2 text-left transition-colors enabled:cursor-pointer",
                     selected
                       ? "border-input-border-focused bg-surface-hover"
                       : "border-border bg-surface hover:border-input-border-focused",
@@ -177,22 +177,24 @@ export function DirectMobileConnectionSection() {
           </div>
 
           {isRunning ? (
-            <div className="grid gap-3">
+            <div className="grid min-w-0 gap-3">
               {qrDataUrl ? (
-                <div className="flex flex-col items-center gap-2 self-center rounded-xl border border-border bg-white p-3">
+                // Bugfix: 二维码面板是 grid 项,self-center 只做纵向居中,横向会被拉伸到整条轨道,
+                // 220px 的二维码外面就会出现一个大白框。justify-self-center 让面板按内容定宽并水平居中。
+                <div className="flex flex-col items-center gap-2 justify-self-center rounded-xl border border-border bg-white p-3">
                   <img src={qrDataUrl} alt="" className="size-[220px]" />
                   <span className="text-ui-xs text-foreground-subtle">
                     {intl.formatMessage({ id: "webRemoteControl.direct.scanHint" })}
                   </span>
                 </div>
               ) : (
-                <div className="flex h-[252px] items-center justify-center self-center">
+                <div className="flex h-[252px] items-center justify-center justify-self-center">
                   <QrCode className="size-8 animate-pulse text-foreground-subtle" />
                 </div>
               )}
 
               {pairingUrl ? (
-                <div className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2">
+                <div className="flex min-w-0 items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2">
                   <Link2 className="size-3.5 shrink-0 text-foreground-subtle" />
                   <span className="min-w-0 flex-1 truncate font-mono text-ui-xs text-foreground-subtle">
                     {pairingUrl}
@@ -214,7 +216,7 @@ export function DirectMobileConnectionSection() {
                 </div>
               ) : null}
 
-              <div className="flex items-center justify-between gap-2">
+              <div className="flex min-w-0 items-center justify-between gap-2">
                 <span className="text-ui-base/relaxed text-foreground-subtle">
                   {intl.formatMessage(
                     { id: "webRemoteControl.direct.connectedClients" },

@@ -21,6 +21,28 @@ async function fixture(workspaceIdentity?: string, workspaceContainsOutput = fal
   return { root, outputRoot, directory, target: { ...scope, path: join(directory, "chart.html") } };
 }
 
+// Windows 上创建文件符号链接需要开发者模式或管理员权限，无权限时 symlink 报 EPERM/EACCES。
+// 这里探测一次能力，决定文件符号链接用例是否运行；目录 junction 不需要额外权限，始终运行。
+async function supportsFileSymlink(): Promise<boolean> {
+  const probeRoot = await mkdtemp(join(tmpdir(), "zcode-symlink-probe-"));
+  try {
+    const source = join(probeRoot, "source.txt");
+    await writeFile(source, "probe");
+    await symlink(source, join(probeRoot, "link.txt"));
+    return true;
+  } catch (error) {
+    const code = (error as { code?: string }).code;
+    if (code === "EPERM" || code === "EACCES") {
+      return false;
+    }
+    throw error;
+  } finally {
+    await rm(probeRoot, { recursive: true, force: true });
+  }
+}
+
+const SUPPORTS_FILE_SYMLINK = await supportsFileSymlink();
+
 describe("Gen UI executor file reader", () => {
   it.each([undefined, "ssh:executor:/workspace"])(
     "reads the session output without writing into Git (%s)",
@@ -53,15 +75,26 @@ describe("Gen UI executor file reader", () => {
       );
     },
   );
-  it("rejects paths outside the host output root and symbolic links below it", async () => {
-    const { outputRoot, target, directory } = await fixture();
+  it("rejects paths outside the host output root", async () => {
+    const { outputRoot, target } = await fixture();
     const oldPath = join(target.workspacePath, "chart.html");
     await writeFile(oldPath, "outside");
     await expect(readGenUiDocument({ ...target, path: oldPath }, outputRoot)).rejects.toThrow(
       "host output directory",
     );
-    await symlink(oldPath, target.path);
-    await expect(readGenUiDocument(target, outputRoot)).rejects.toThrow("symbolic links");
+  });
+  it.runIf(SUPPORTS_FILE_SYMLINK)(
+    "rejects a file symbolic link below the output root",
+    async () => {
+      const { outputRoot, target } = await fixture();
+      const oldPath = join(target.workspacePath, "chart.html");
+      await writeFile(oldPath, "outside");
+      await symlink(oldPath, target.path);
+      await expect(readGenUiDocument(target, outputRoot)).rejects.toThrow("symbolic links");
+    },
+  );
+  it("rejects a directory junction below the output root", async () => {
+    const { outputRoot, target, directory } = await fixture();
     await rm(directory, { recursive: true });
     await symlink(target.workspacePath, directory, "junction");
     await expect(readGenUiDocument(target, outputRoot)).rejects.toThrow("symbolic links");

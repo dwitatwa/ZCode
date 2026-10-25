@@ -3,7 +3,6 @@ import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
-import { fileURLToPath } from "node:url";
 import { afterEach, expect, it } from "vitest";
 
 const roots: string[] = [];
@@ -33,13 +32,13 @@ it.each([false, true])(
     });
   `,
     );
-    const proxy = fileURLToPath(
-      new URL("./e2e/helpers/subagent-config-proxy.mjs", import.meta.url),
-    );
+    const proxyUrl = new URL("./e2e/helpers/subagent-config-proxy.mjs", import.meta.url);
     const child = spawn(process.execPath, [entry, "app-server", "--stdio"], {
       env: {
         ...process.env,
-        NODE_OPTIONS: `--import=${JSON.stringify(proxy)}`,
+        // Bugfix: --import 只接受 ESM 说明符；Windows 绝对路径（C:\...）会被 ESM loader 以
+        // ERR_UNSUPPORTED_ESM_URL_SCHEME 拒绝，这里必须传 file:// URL。
+        NODE_OPTIONS: `--import=${JSON.stringify(proxyUrl.href)}`,
         ZCODE_E2E_ARTIFACT_DIR: root,
       },
       stdio: ["pipe", "pipe", "pipe"],

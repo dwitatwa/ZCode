@@ -651,7 +651,7 @@ describe("ContextBuilder meta user context", () => {
     );
     expect(dynamicSystem).toContain("This is the git status at the start of the conversation");
     expect(dynamicSystem).toContain("Current branch: feature/alignment");
-    expect(dynamicSystem).toContain("Main branch (you will usually use this for PRs): main");
+    expect(dynamicSystem).toContain("Main branch: main");
     expect(dynamicSystem).toContain("Git user: ZCode Tester <tester@example.com>");
     expect(dynamicSystem).toContain("Status:\n M package.json");
     expect(dynamicSystem).toContain("Recent commits:\nabc123 test commit");
@@ -1278,7 +1278,7 @@ describe("ContextBuilder meta user context", () => {
         "",
         "Current branch: feat/trajectory",
         "",
-        "Main branch (you will usually use this for PRs): staging",
+        "Main branch: staging",
         "",
         "Git user: Dev User",
         "",

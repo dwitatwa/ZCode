@@ -58,6 +58,21 @@ body,
   overscroll-behavior-y: none;
 }
 
+/*
+ * @zcode/ui/styles.css（会话正文用的桌面样式表）带了一条未作用域的
+ *   html, body, #root { ...; background: 0 0 !important }
+ * 那是为了让 Electron 的 vibrancy 透出来。手机不是 Electron，页面必须自己不透明，
+ * 否则浏览器默认白底会从 #root 下面透出来 —— 任务列表和任务信息屏一起被洗白。
+ *
+ * 样式表在 mobile.css 之前加载（main.tsx 的 import 顺序），所以这里用 !important
+ * 压过它。只压 background 这一条，字体与颜色继续走上面的声明。
+ */
+html,
+body,
+#root {
+  background: var(--bg) !important;
+}
+
 button {
   font: inherit;
   color: inherit;
@@ -188,557 +203,37 @@ button {
 }
 
 /* ========================= 工作区切换 ========================= */
+/*
+ * 主屏已迁到 mainScreen.css 的 .ms 作用域（Obsidian 设计系统），这里的
+ * .ws-picker / .ws-static / .list-scroll / .task-row / .archived-* 随之删除。
+ * 只保留 ws-remote-tag 系列：工作区选择器浮层仍是旧视觉，还在用它们。
+ */
 
-.ws-picker {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+/* 远端 workspace（WSL 等）标记：等宽小字，和本地项目区分开，避免误以为是本机目录。 */
+.ws-remote-tag {
   flex-shrink: 0;
-  width: 100%;
-  padding: 9px 14px;
-  border-bottom: 1px solid var(--border-soft);
   font-family: var(--mono);
-  font-size: 11px;
-  color: var(--fg-subtle);
-}
-.ws-picker:active {
-  background: var(--surface);
-}
-.ws-picker-label {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ws-static {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-  padding: 9px 14px;
-  border-bottom: 1px solid var(--border-soft);
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--fg-faint);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* ========================== 任务列表 ========================== */
-
-.list-scroll {
-  flex: 1;
-  overflow-y: auto;
-  padding-bottom: 24px;
-  -webkit-overflow-scrolling: touch;
-}
-
-.task-row {
-  display: flex;
-  align-items: stretch;
-  border-bottom: 1px solid var(--border-soft);
-}
-.task-row.active {
-  background: var(--accent-dim);
-  box-shadow: inset 2px 0 0 var(--accent);
-}
-.task-row.archived {
-  opacity: 0.6;
-}
-
-.task-open {
-  flex: 1;
-  min-width: 0;
-  padding: 12px 6px 12px 14px;
-}
-.task-open:active {
-  background: var(--surface);
-}
-
-.task-title {
-  font-size: 14.5px;
-  font-weight: 500;
-  line-height: 1.4;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  overflow-wrap: anywhere;
-}
-
-.task-meta {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  margin-top: 4px;
-  font-family: var(--mono);
-  font-size: 10.5px;
-  color: var(--fg-faint);
-}
-.task-sep {
-  opacity: 0.55;
-}
-.task-status.completed {
-  color: var(--fg-faint);
-}
-.task-status.running {
-  color: var(--accent);
-}
-.task-status.error {
-  color: var(--danger);
-}
-
-.run-cursor {
-  width: 5px;
-  height: 10px;
-  flex-shrink: 0;
-  background: var(--accent);
-  animation: blink 1.1s steps(1) infinite;
-}
-@keyframes blink {
-  0%,
-  55% {
-    opacity: 1;
-  }
-  56%,
-  100% {
-    opacity: 0;
-  }
-}
-
-.task-menu {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  flex-shrink: 0;
-  color: var(--fg-faint);
-}
-.task-menu:active {
-  background: var(--surface-2);
-  color: var(--fg-muted);
-}
-
-/* -------------------------- 归档区 -------------------------- */
-
-.archived-block {
-  margin-top: 6px;
-}
-.archived-toggle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  padding: 12px 14px;
-  border-top: 1px solid var(--border);
-  border-bottom: 1px solid var(--border-soft);
-  font-family: var(--mono);
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.09em;
+  font-size: 9px;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--fg-faint);
-}
-.archived-toggle .chev {
-  transition: transform 0.18s ease;
-}
-.archived-toggle .chev.open {
-  transform: rotate(180deg);
-}
-.archived-count {
-  color: var(--fg-subtle);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 4px;
 }
 
-.archived-clear {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin: 10px 14px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--danger);
-  opacity: 0.9;
-}
-.archived-clear:active {
-  background: var(--danger-dim);
-  opacity: 1;
+/* 已知连不上的远端 workspace：用告警色，和「可用但为远端」区分开。 */
+.ws-offline-tag {
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 /* ========================== 会话视图 ========================== */
-
-/* 滚动区 + 右侧导航轨的定位上下文。 */
-.chat-body {
-  position: relative;
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.chat-scroll {
-  flex: 1;
-  overflow-y: auto;
-  padding: 14px 12px 20px;
-  /* 右侧给导航轨让位，避免刻度压住正文最后几个字。 */
-  padding-right: 18px;
-  -webkit-overflow-scrolling: touch;
-}
-
-.perm-banner {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-  padding: 8px 14px;
-  font-size: 12px;
-  color: var(--danger);
-  background: var(--danger-dim);
-  border-bottom: 1px solid var(--border);
-}
-
-.load-earlier {
-  display: block;
-  width: 100%;
-  margin-bottom: 14px;
-  padding: 8px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--fg-muted);
-  text-align: center;
-}
-.load-earlier:active {
-  background: var(--surface);
-}
-
-/* -------------------------- 时间线 -------------------------- */
-
-.tl {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-}
-
-.tl-turn {
-  display: flex;
-  gap: 0;
-}
-
-/* 轮次轨道：左侧细线 + 序号，用来在长流里定位"第几轮"。 */
-.tl-turn-rail {
-  position: relative;
-  width: var(--rail);
-  flex-shrink: 0;
-  display: flex;
-  justify-content: center;
-}
-.tl-turn-rail::before {
-  content: "";
-  position: absolute;
-  top: 4px;
-  bottom: -18px;
-  width: 1px;
-  background: var(--border-soft);
-}
-.tl-turn:last-child .tl-turn-rail::before {
-  bottom: 0;
-}
-.tl-turn-mark {
-  position: relative;
-  z-index: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  margin-top: 2px;
-  border-radius: 50%;
-  border: 1px solid var(--border);
-  background: var(--bg);
-  font-family: var(--mono);
-  font-size: 9.5px;
-  color: var(--fg-faint);
-}
-
-.tl-turn-body {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-}
-
-/* 用户输入：细边引用块，作为长流里的定位锚点。 */
-.tl-user {
-  border-left: 2px solid var(--accent);
-  padding: 2px 0 2px 10px;
-  margin-bottom: 4px;
-}
-.tl-user-text {
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 1.45;
-  color: var(--fg);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-/* 助手正文：无气泡，直接排在轨道右侧。 */
-.tl-text {
-  font-size: 14.5px;
-  line-height: 1.6;
-  color: var(--fg);
-  overflow-wrap: anywhere;
-}
-
-/* ------------------------ 思考块 ------------------------ */
-
-.tl-think {
-  border-left: 2px solid var(--border);
-  padding-left: 10px;
-}
-.tl-think.open {
-  border-left-color: var(--surface-2);
-}
-.tl-think-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  min-width: 0;
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--fg-subtle);
-}
-.tl-think-mark {
-  color: var(--fg-faint);
-  flex-shrink: 0;
-}
-.tl-think-label {
-  letter-spacing: 0.04em;
-  flex-shrink: 0;
-}
-.tl-think-preview {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--fg-faint);
-  font-style: italic;
-}
-.tl-think-body {
-  margin-top: 6px;
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--fg-muted);
-}
-
-/* ------------------------ 工具调用 ------------------------ */
-
-.tl-tool {
-  border-left: 2px solid var(--border);
-  padding-left: 10px;
-}
-.tl-tool.tone-running {
-  border-left-color: var(--accent);
-}
-.tl-tool.tone-failed {
-  border-left-color: var(--danger);
-}
-
-.tl-tool-head {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  width: 100%;
-  min-width: 0;
-  padding: 1px 0;
-  font-family: var(--mono);
-  font-size: 11.5px;
-  line-height: 1.5;
-}
-.tl-tool-head:disabled {
-  cursor: default;
-}
-.tl-tool-head.as-static {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  width: 100%;
-  min-width: 0;
-  padding: 1px 0;
-  font-family: var(--mono);
-  font-size: 11.5px;
-  line-height: 1.5;
-}
-
-.tl-tool-glyph {
-  flex-shrink: 0;
-  width: 11px;
-  text-align: center;
-  color: var(--fg-faint);
-}
-.tone-running .tl-tool-glyph {
-  color: var(--accent);
-}
-.tone-failed .tl-tool-glyph {
-  color: var(--danger);
-}
-.tone-ok .tl-tool-glyph {
-  color: var(--fg-subtle);
-}
-
-.tl-tool-name {
-  flex-shrink: 0;
-  font-weight: 600;
-  color: var(--fg-muted);
-}
-.tl-tool-summary {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--fg-faint);
-}
-.tl-tool-chev {
-  flex-shrink: 0;
-  color: var(--fg-faint);
-  transition: transform 0.16s ease;
-}
-.tl-tool-chev.open {
-  transform: rotate(90deg);
-}
-
-.tl-tool-fail-line {
-  margin-top: 3px;
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--danger);
-  overflow-wrap: anywhere;
-}
-
-.tl-tool-detail {
-  margin: 6px 0 2px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.tl-tool-error {
-  display: flex;
-  align-items: flex-start;
-  gap: 5px;
-  font-size: 12px;
-  color: var(--danger);
-  overflow-wrap: anywhere;
-}
-.tl-tool-field-label {
-  font-family: var(--mono);
-  font-size: 9.5px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--fg-faint);
-  margin-bottom: 3px;
-}
-.tl-tool-field pre {
-  margin: 0;
-  padding: 8px 9px;
-  max-height: 260px;
-  overflow: auto;
-  border: 1px solid var(--border-soft);
-  border-radius: 7px;
-  background: var(--bg-raised);
-  font-family: var(--mono);
-  font-size: 11px;
-  line-height: 1.5;
-  color: var(--fg-muted);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.tl-slice-notice {
-  font-family: var(--mono);
-  font-size: 10.5px;
-  color: var(--fg-faint);
-  padding-left: 10px;
-}
-
-.tl-divider {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 6px 0;
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--fg-faint);
-}
-.tl-divider::before,
-.tl-divider::after {
-  content: "";
-  flex: 1;
-  height: 1px;
-  background: var(--border-soft);
-}
-.tl-divider.tone-running {
-  color: var(--accent);
-}
-.tl-divider.tone-running::before,
-.tl-divider.tone-running::after {
-  background: var(--accent-dim);
-}
-.tl-divider.tone-failed {
-  color: var(--danger);
-}
-
-.tl-inline-action {
-  display: inline-block;
-  margin-top: 6px;
-  padding: 5px 9px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  font-family: var(--mono);
-  font-size: 10.5px;
-  color: var(--fg-muted);
-}
-.tl-inline-action:active {
-  background: var(--surface);
-}
-
-.tl-working {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin-top: 14px;
-  padding-left: calc(var(--rail) + 10px);
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--accent);
-}
-.tl-working-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent);
-  animation: pulse 1.1s ease-in-out infinite;
-}
-@keyframes pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.25;
-  }
-}
+/*
+ * 会话屏已迁到 chatScreen.css 的 .cs 作用域（Column 布局），这里的
+ * .chat-body / .chat-scroll / .perm-banner / .load-earlier / .tl-* 随之删除。
+ * Markdown 规则保留：解析器没变，会话屏只在 .cs 里覆盖它的配色。
+ */
 
 /* ========================= Markdown ========================= */
 
@@ -821,88 +316,10 @@ button {
 }
 
 /* ========================== Composer ========================== */
-
-.composer {
-  display: flex;
-  align-items: flex-end;
-  gap: 7px;
-  flex-shrink: 0;
-  padding: 8px 10px;
-  padding-bottom: calc(8px + var(--safe-b));
-  border-top: 1px solid var(--border);
-  background: var(--bg);
-}
-
-.composer-config {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  flex-shrink: 0;
-  border: 1px solid var(--border);
-  border-radius: 9px;
-  color: var(--fg-subtle);
-}
-.composer-config:active {
-  background: var(--surface);
-  color: var(--fg-muted);
-}
-
-.composer-input {
-  flex: 1;
-  min-width: 0;
-  min-height: 36px;
-  max-height: 132px;
-  padding: 8px 11px;
-  border: 1px solid var(--border);
-  border-radius: 9px;
-  background: var(--surface);
-  color: var(--fg);
-  font-family: inherit;
-  font-size: 14.5px;
-  line-height: 1.4;
-  resize: none;
-  overflow-y: auto;
-  outline: none;
-}
-.composer-input::placeholder {
-  color: var(--fg-faint);
-}
-.composer-input:focus {
-  border-color: var(--surface-2);
-}
-/* 输入框确实需要滚动（内容超过 max-height）时，只留一根细条，别用系统默认宽度。 */
-.composer-input::-webkit-scrollbar {
-  width: 3px;
-}
-.composer-input::-webkit-scrollbar-thumb {
-  border-radius: 3px;
-  background: var(--border);
-}
-
-.composer-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  flex-shrink: 0;
-  border-radius: 9px;
-}
-.composer-btn.send {
-  background: var(--accent);
-  color: #141413;
-}
-.composer-btn.send:disabled {
-  background: var(--surface-2);
-  color: var(--fg-faint);
-}
-.composer-btn.stop {
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--danger);
-}
+/*
+ * composer 已迁到 chatScreen.css 的 .cs-comp 系列。旧的 .composer / .composer-input
+ * / .composer-btn 规则一并删除，避免两套样式同时命中同一个元素。
+ */
 
 /* =========================== Info =========================== */
 
@@ -1082,45 +499,6 @@ button {
 }
 .plan-title {
   min-width: 0;
-}
-
-/* ========================== 底部导航 ========================== */
-
-.tabbar {
-  display: flex;
-  flex-shrink: 0;
-  border-top: 1px solid var(--border);
-  background: var(--bg);
-  padding-bottom: var(--safe-b);
-}
-.tab {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  padding: 7px 0 5px;
-  color: var(--fg-faint);
-}
-.tab.active {
-  color: var(--fg);
-}
-.tab-icon {
-  position: relative;
-  display: inline-flex;
-}
-.tab-label {
-  font-size: 10px;
-  font-weight: 500;
-}
-.tab-dot {
-  position: absolute;
-  top: -1px;
-  right: -3px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent);
 }
 
 /* ============================ 浮层 ============================ */
@@ -1363,28 +741,10 @@ button {
 
 /* ============================ 通用 ============================ */
 
-.empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 64px 24px;
-  color: var(--fg-subtle);
-  font-size: 13px;
-  text-align: center;
-}
-.explorer-empty p {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 500;
-  color: var(--fg);
-}
-.explorer-empty span {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--fg-faint);
-}
+/*
+ * .empty 随会话屏一起删除：会话屏现在用 .cs-empty，主屏用 .ms-empty，
+ * 保留一个没人引用的通用空态只会让下一个改样式的人以为它还在用。
+ */
 
 .btn {
   padding: 8px 20px;
@@ -1395,6 +755,13 @@ button {
 }
 .btn:active {
   background: var(--surface);
+}
+
+/* 次要动作（如「换一个项目」）：不加边框，避免和主操作抢注意力。 */
+.btn-quiet {
+  border-color: transparent;
+  color: var(--fg-subtle);
+  font-size: 12px;
 }
 
 /* ======================= 消息导航轨（右侧） ======================= */

@@ -8,13 +8,25 @@ import { fileURLToPath } from "node:url";
 if (process.argv.includes("app-server") && process.argv.includes("--stdio")) {
   // 仅由本组 WDIO 预加载的透明 stdio 代理。真实 Host/CLI 完成保存、解析和执行；
   // 故障位于传输边界，不修改业务对象，也不记录其他 RPC 的鉴权或模型凭据。
-  const preload = `--import=${JSON.stringify(fileURLToPath(import.meta.url))}`;
+  // 预加载可能以文件系统路径（WDIO 的入口注入）或 file:// URL（--import 只接受 ESM 说明符，
+  // Windows 上裸盘符路径会被 loader 以 ERR_UNSUPPORTED_ESM_URL_SCHEME 拒绝）出现，两种都要
+  // 移除，否则子进程会再次加载本代理并无限递归。
+  const proxyUrl = new URL(import.meta.url);
+  const preloadSpecifiers = [
+    `--import=${JSON.stringify(fileURLToPath(proxyUrl))}`,
+    `--import=${JSON.stringify(proxyUrl.href)}`,
+  ];
   const child = spawn(process.execPath, process.argv.slice(1), {
     stdio: ["pipe", "pipe", "inherit"],
     // 只移除当前代理预加载，保留覆盖采集等其他 Node 参数，防止递归启动代理。
     env: {
       ...process.env,
-      NODE_OPTIONS: (process.env.NODE_OPTIONS ?? "").replace(preload, "").trim(),
+      NODE_OPTIONS: preloadSpecifiers
+        .reduce(
+          (options, specifier) => options.replace(specifier, ""),
+          process.env.NODE_OPTIONS ?? "",
+        )
+        .trim(),
     },
   });
   const root = process.env.ZCODE_E2E_ARTIFACT_DIR;

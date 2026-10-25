@@ -39,6 +39,7 @@ import type {
   WebRemoteControlStatus,
   WebRemoteControlTaskTarget,
   WebRemoteControlWorkspaceTarget,
+  WindowWorkspaceEntry,
   OAuthStateRegistration,
   PostUpdateReleaseNotesPayload,
   RemoteConnectionRuntimeLog,
@@ -153,8 +154,8 @@ declare global {
       ): () => void;
       /** 检查目录是否已在其他窗口打开 */
       activateOrSetWorkspace?(path: string): Promise<{ activated: boolean }>;
-      /** 同步当前窗口所有 tab 的 workspace 路径到 main 进程 */
-      syncWindowTabs(paths: string[]): void;
+      /** 同步当前窗口所有 tab 的 workspace 条目(路径 + 远端身份)到 main 进程 */
+      syncWindowTabs(workspaces: WindowWorkspaceEntry[]): void;
       /** 同步当前窗口里 Web 远程控制允许切换的 workspace */
       syncWebRemoteControlWorkspaces?(workspaces: WebRemoteControlWorkspaceTarget[]): void;
       /** 同步当前窗口里 Web 远程控制可展示的 task 快照 */

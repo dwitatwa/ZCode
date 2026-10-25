@@ -56,7 +56,7 @@ const ZCODE_AGENT_RUNTIME = {
   },
 };
 const releaseDir = join(mockCdnDir, "releases", version);
-const nodeVersion = "v22.16.0";
+const nodeVersion = "v22.23.4";
 const componentSchemaVersion = 1;
 const remotePlatforms = ["linux-arm64", "linux-x64", "darwin-arm64", "darwin-x64"];
 const pnpmCommand = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
@@ -419,35 +419,51 @@ function resolveNodePtyPackageVersion(platformKey) {
   return packageJson.version.trim();
 }
 
+/**
+ * 判断已缓存的 node 二进制是否就是要下载的版本。
+ * 只靠 existsSync 会在 nodeVersion 升级后继续复用旧二进制，导致发布产物里仍是旧运行时。
+ * 二进制可能不是宿主平台（交叉构建），不能执行，所以直接扫描内嵌的版本字符串。
+ */
+async function nodeBinaryMatchesVersion(binaryPath, expectedVersion) {
+  try {
+    const bytes = readFileSync(binaryPath);
+    return bytes.includes(Buffer.from(expectedVersion, "utf8"));
+  } catch {
+    return false;
+  }
+}
+
 async function prepareNodeBinaries() {
   for (const platformKey of remotePlatforms) {
     const nodeDir = join(releaseDir, "node", platformKey);
     const nodeBinaryPath = join(nodeDir, "node");
+
+    if (!(existsSync(nodeBinaryPath) && (await nodeBinaryMatchesVersion(nodeBinaryPath, nodeVersion)))) {
+      // 缓存里可能是旧版本二进制（nodeVersion 升级后旧缓存仍存在），先清掉再下载。
+      rmSync(nodeDir, { recursive: true, force: true });
+      mkdirSync(nodeDir, { recursive: true });
+      const archiveName = `node-${nodeVersion}-${platformKey}.tar.xz`;
+      const url = `${nodeDistBase()}/${nodeVersion}/${archiveName}`;
+
+      console.log(`  [download] ${url}`);
+
+      try {
+        await extractArchiveMember(url, nodeDir, `node-${nodeVersion}-${platformKey}/bin/node`);
+        chmodSync(nodeBinaryPath, 0o755);
+        console.log(`  [ok] mock-cdn node/${platformKey}`);
+      } catch (error) {
+        console.error(`  [error] 下载或解压失败: ${url}`);
+        console.error(
+          `  [error] 请检查 CI runner 的外网访问、tar/xz 依赖，或用 ZCODE_NODE_DIST_MIRROR 覆盖下载源（当前 ${nodeDistBase()}）`,
+        );
+        throw error;
+      }
+    } else {
+      console.log(`  [skip] mock-cdn node/${platformKey} already exists`);
+    }
+
     // 远端 node 组件独立下载；复用缓存时也要刷新精确版本的 Node 许可原文。
     await stageNodeNotices(nodeDir, nodeVersion, rootDir);
-
-    if (existsSync(nodeBinaryPath)) {
-      console.log(`  [skip] mock-cdn node/${platformKey} already exists`);
-      continue;
-    }
-
-    mkdirSync(nodeDir, { recursive: true });
-    const archiveName = `node-${nodeVersion}-${platformKey}.tar.xz`;
-    const url = `${nodeDistBase()}/${nodeVersion}/${archiveName}`;
-
-    console.log(`  [download] ${url}`);
-
-    try {
-      await extractArchiveMember(url, nodeDir, `node-${nodeVersion}-${platformKey}/bin/node`);
-      chmodSync(nodeBinaryPath, 0o755);
-      console.log(`  [ok] mock-cdn node/${platformKey}`);
-    } catch (error) {
-      console.error(`  [error] 下载或解压失败: ${url}`);
-      console.error(
-        `  [error] 请检查 CI runner 的外网访问、tar/xz 依赖，或用 ZCODE_NODE_DIST_MIRROR 覆盖下载源（当前 ${nodeDistBase()}）`,
-      );
-      throw error;
-    }
   }
 }
 

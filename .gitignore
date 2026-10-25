@@ -73,3 +73,6 @@ packages/desktop/resources/macos-window-bounds/
 __pycache__/
 *.pyc
 .zcode-runtime
+
+# Brainstorming visual companion sessions (mockups + state)
+.superpowers/

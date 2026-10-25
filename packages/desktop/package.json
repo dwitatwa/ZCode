@@ -43,7 +43,7 @@
     "typecheck:e2e": "pnpm --filter @zcode/e2e-report build:node && tsc -p tsconfig.e2e.json --noEmit",
     "bundle": "node scripts/bundle.mjs",
     "audit:bundle-size": "node scripts/audit-bundle-size.mjs",
-    "verify:mobile-direct": "tsx scripts/verify-mobile-direct-bind.mts && tsx scripts/verify-mobile-direct-bridge.mts && tsx scripts/verify-mobile-direct-server.mts && tsx scripts/verify-mobile-direct-pairing.mts",
+    "verify:mobile-direct": "tsx scripts/verify-mobile-direct-bind.mts && tsx scripts/verify-mobile-direct-bridge.mts && tsx scripts/verify-mobile-direct-server.mts && tsx scripts/verify-mobile-direct-pairing.mts && tsx scripts/verify-mobile-direct-unavailable.mts",
     "postinstall": "node scripts/node-pty-rebuild.mjs",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix"

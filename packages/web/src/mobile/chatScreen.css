@@ -1,0 +1,321 @@
+/*
+ * ZCode Mobile — 会话屏设计系统（Column）。
+ *
+ * 作用域:所有 token 与规则都挂在 .cs 下,不写 :root。
+ * 原因与主屏相同:主屏已迁到 .ms,而任务信息、composer 的配置面板、浮层、toast
+ * 仍是旧视觉。把这些 token 放到 :root,那些地方会跟着变色 —— 这次只改会话屏。
+ *
+ * 视觉方向与主屏一致(暖黑 + 黄铜 + 等宽元数据),布局按 Option B:
+ * - 头部是大号细体标题 + 一行等宽元数据,不再是 48px 工具条。
+ * - 轮与轮之间用「编号 — 细线 — 时间」的等宽分隔条,不再用左侧带圆点的竖轨。
+ * - 用户提问是抬起的方块,助手正文直接排在底色上。
+ */
+
+.cs {
+  --cs-ground: #0b0a09;
+  --cs-raised: #141210;
+  --cs-raised-2: #1b1815;
+  --cs-brass: #b8935a;
+  --cs-brass-dim: rgba(184, 147, 90, 0.1);
+  --cs-cream: #f0e9dd;
+  --cs-body: #ded7cb;
+  --cs-dim: #8b8378;
+  --cs-faint: #554d43;
+  --cs-ghost: #4a423b;
+  --cs-label: #6b6053;
+  --cs-danger: #a4685c;
+  --cs-line: rgba(222, 215, 203, 0.065);
+  --cs-line-soft: rgba(222, 215, 203, 0.05);
+  --cs-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --cs-safe-b: env(safe-area-inset-bottom, 0px);
+  --cs-safe-t: env(safe-area-inset-top, 0px);
+
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--cs-ground);
+  color: var(--cs-body);
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.cs *,
+.cs *::before,
+.cs *::after {
+  box-sizing: border-box;
+}
+
+/* 只重置会话屏自己的按钮。
+   教训来自主屏:写 `.cs button` 会以 (0,1,1) 的强度压过浮层的 `.option-row`
+   (0,1,0),把面板每行 padding 清成 0。逐个列出即可。
+   正文里的按钮不在这里 —— 它们属于桌面渲染器，样式由它自己带。 */
+.cs .cs-back,
+.cs .cs-info,
+.cs .cs-inline-action,
+.cs .cs-retry {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+/* ============================ 头部 ============================ */
+
+.cs-head {
+  flex-shrink: 0;
+  padding: calc(12px + var(--cs-safe-t)) 20px 12px;
+}
+
+.cs-head-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cs-back,
+.cs-info {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 7px;
+  color: var(--cs-dim);
+}
+.cs-back {
+  margin-left: -7px;
+}
+.cs-info {
+  margin-right: -7px;
+  color: var(--cs-faint);
+}
+.cs-back:active,
+.cs-info:active {
+  background: var(--cs-raised);
+  color: var(--cs-body);
+}
+
+.cs-kicker {
+  flex: 1;
+  min-width: 0;
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: var(--cs-label);
+}
+
+/* 标题是整屏最大的东西:它告诉你正在看哪个任务。 */
+.cs-title {
+  margin-top: 8px;
+  font-size: 23px;
+  font-weight: 300;
+  letter-spacing: -0.03em;
+  line-height: 1.12;
+  color: var(--cs-cream);
+  overflow-wrap: anywhere;
+}
+
+/* 元数据一行:轮数 · 最后活动时间 · 项目。等宽字体,数字才能对齐。 */
+.cs-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-family: var(--cs-mono);
+  font-size: 9.5px;
+  color: var(--cs-faint);
+  overflow: hidden;
+  white-space: nowrap;
+}
+.cs-meta-sep {
+  color: #3d372f;
+}
+.cs-meta-project {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* 运行中把这一行点成黄铜色:头部没有别的位置可以放状态。 */
+.cs-meta.running {
+  color: var(--cs-brass);
+}
+
+/* ======================== 提示条 ======================== */
+
+.cs-banner {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+  margin: 0 20px 10px;
+  padding: 7px 10px;
+  border-radius: 7px;
+  background: rgba(164, 104, 92, 0.1);
+  font-family: var(--cs-mono);
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--cs-danger);
+}
+.cs-retry {
+  font-family: var(--cs-mono);
+  font-size: 10px;
+  color: var(--cs-cream);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/*
+ * 会话正文的样式不再在这里定义。
+ * 正文由桌面的 ConversationTimeline 渲染（components/DesktopConversationBody.tsx），
+ * 它自带 Tailwind 与 @zcode/ui 的样式表。这里曾经有一整套手机自有时间线的样式
+ * （轮次分隔条、用户方块、工具行、思考块、产物/子智能体/hook、Markdown、右侧导航轨），
+ * 全部随手机渲染器一起删除了 —— 留着只会让两套样式命中同一批元素。
+ */
+
+/*
+ * 正文容器。这一条必须留着，而且必须是 flex 容器。
+ *
+ * 渲染器靠 `flex-1 + min-h-0` 从父层取高度，再把溢出交给它自己的
+ * `overflow-y-auto`。父层如果没有确定高度、又不允许收缩，`flex-1` 就失去参照：
+ * 渲染器高度退回内容高度，滚动区永远不溢出 —— 表现是「会话页滚不动」。
+ *
+ * 删旧时间线样式时这条被一起删掉了，于是容器退回普通 block，类型检查和单测
+ * 都发现不了（它们只看类名是否存在，不看它有没有规则）。
+ */
+.cs-body-wrap {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+/* 空态与懒加载占位：两者都不是正文，不参与滚动。 */
+.cs-empty,
+.cs-loading {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 32px 24px;
+  font-family: var(--cs-mono);
+  font-size: 11px;
+  color: var(--cs-faint);
+  text-align: center;
+}
+.cs-empty p {
+  margin: 0;
+  color: var(--cs-dim);
+}
+.cs-empty span {
+  color: var(--cs-ghost);
+}
+
+/* ======================== Composer ======================== */
+
+/* 圆角输入框,不再是一条贴在分隔线上的直边栏。 */
+.cs-comp {
+  flex-shrink: 0;
+  padding: 8px 14px calc(12px + var(--cs-safe-b));
+}
+
+.cs-comp-field {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 5px 5px 5px 10px;
+  border: 1px solid var(--cs-line);
+  border-radius: 12px;
+  background: var(--cs-raised);
+}
+.cs-comp-field:focus-within {
+  border-color: rgba(222, 215, 203, 0.14);
+}
+
+.cs-comp-config {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 30px;
+  flex-shrink: 0;
+  color: var(--cs-faint);
+}
+.cs-comp-config:active {
+  color: var(--cs-body);
+}
+
+.cs-comp-input {
+  flex: 1;
+  min-width: 0;
+  min-height: 30px;
+  max-height: 132px;
+  padding: 5px 0;
+  border: none;
+  background: none;
+  color: var(--cs-cream);
+  font-family: inherit;
+  font-size: 13.5px;
+  line-height: 1.45;
+  resize: none;
+  overflow-y: auto;
+  outline: none;
+}
+.cs-comp-input::placeholder {
+  color: var(--cs-faint);
+}
+/* 内容超过 max-height 时只留一根细条,不用系统默认宽度。 */
+.cs-comp-input::-webkit-scrollbar {
+  width: 3px;
+}
+.cs-comp-input::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: var(--cs-ghost);
+}
+
+.cs-comp-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 50%;
+}
+.cs-comp-btn.send {
+  background: var(--cs-brass);
+  color: #141210;
+}
+.cs-comp-btn.send:disabled {
+  background: var(--cs-raised-2);
+  color: var(--cs-ghost);
+}
+.cs-comp-btn.stop {
+  border: 1px solid var(--cs-line);
+  border-radius: 50%;
+  background: var(--cs-raised-2);
+  color: var(--cs-danger);
+}
+
+/* ====================== 浮层(保持旧视觉) ====================== */
+
+/*
+ * composer 的配置面板不是 portal,它渲染在 .cs 内部,因此会继承 .cs 的
+ * font-family 与 color。那两个值原本来自 body(Inter + --fg),被 .cs 改成了
+ * --cs-body —— 面板标题会悄悄暗一档。
+ *
+ * 这里把继承值还原,让面板和改动之前完全一致:这次只改会话屏本身。
+ * 注意只还原继承属性,面板自己的背景/边框仍由 mobile.css 提供。
+ */
+.cs .sheet-layer {
+  color: var(--fg);
+  font-family: var(--sans);
+}

@@ -195,6 +195,13 @@ import {
   createMobileDirectConnectionManager,
   resolveDefaultMobileDistRoot,
 } from "./mobileDirectConnectionManager.js";
+// 修复原因：这两项此前只有调用没有 import。tsup 不会为未声明的全局变量报错，
+// 所以类型检查与构建都通过，直到运行时 spawnHostProcess 抛 ReferenceError，
+// Host 进程起不来，渲染层等满 30s 后报 startup-channel-unavailable。
+import {
+  windowWorkspaceRealtimeKeys,
+  type WindowWorkspaceEntryMap,
+} from "./windowWorkspaceEntries.js";
 import {
   reportRemoteConnectionStateChangedToArms,
   reportRemoteDisconnectToArms,
@@ -636,7 +643,7 @@ const forceQuitRef = { current: false };
 const explicitQuitRef = { current: false };
 let appQuitPreparationInFlight: Promise<void> | null = null;
 let hasPreparedAppQuit = false;
-const windowWorkspaceMap = new Map<number, Set<string>>();
+const windowWorkspaceEntryMap: WindowWorkspaceEntryMap = new Map();
 const windowTaskRealtimeHostIdMap = new Map<number, string>();
 const windowUnreadCountMap = new Map<number, number>();
 const windowHostProcessMap = new Map<number, ElectronUtilityProcess>();
@@ -813,7 +820,9 @@ const remoteSessionManager = createRemoteWorkspaceSessionManager({
 const deviceMid = ensureDesktopDeviceMidSync();
 const mobileDirectConnectionManager = createMobileDirectConnectionManager({
   windowHostProcessMap,
-  windowWorkspaceMap,
+  windowWorkspaceEntryMap,
+  resolveRemoteSessionForWorkspace: (win, params) =>
+    remoteSessionManager.findAttachableSessionForWorkspace(win, params),
   resolveMobileDistRoot: resolveDefaultMobileDistRoot,
   onStatusChanged: (status) => {
     for (const win of getApplicationWindowsExcludingCuaIndicator()) {
@@ -1853,7 +1862,7 @@ function createWindowInstance(startupBootstrap: StartupWindowBootstrap = {}) {
         },
         {
           taskRealtime: {
-            workspaceKeys: windowWorkspaceMap.get(win.id) ?? [],
+            workspaceKeys: windowWorkspaceRealtimeKeys(windowWorkspaceEntryMap.get(win.id)),
             onHostId: (hostId) => {
               windowTaskRealtimeHostIdMap.set(win.id, hostId);
             },
@@ -2268,8 +2277,8 @@ app.whenReady().then(async () => {
       );
     },
     focusWorkspaceInExistingWindow: (path, extra) =>
-      focusWorkspaceInExistingWindow(path, windowWorkspaceMap, extra),
-    windowWorkspaceMap,
+      focusWorkspaceInExistingWindow(path, windowWorkspaceEntryMap, extra),
+    windowWorkspaceEntryMap,
     windowUnreadCountMap,
     resolveSystemLocale: resolveSystemApplicationLocale,
     currentApplicationLocale: () => currentApplicationLocale,
@@ -2467,7 +2476,7 @@ app.on("browser-window-created", (_, win) => {
     browserGuestManager.closeWindow(win.id);
     // 直连监听归属启动它的窗口;窗口关闭即停,避免留下无人可用的端口与 token。
     mobileDirectConnectionManager.handleWindowClosed(windowWebContentsId);
-    windowWorkspaceMap.delete(win.id);
+    windowWorkspaceEntryMap.delete(win.id);
     windowTaskRealtimeHostIdMap.delete(win.id);
     if (windowUnreadCountMap.delete(win.id)) {
       syncApplicationUnreadBadge(windowUnreadCountMap);

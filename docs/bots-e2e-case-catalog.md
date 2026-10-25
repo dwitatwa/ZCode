@@ -226,6 +226,8 @@ BOT-UI-MN：真实正式气泡、准备气泡与队列组件在 390/1200px、深
 上述路径均相对 `packages/desktop/test/e2e/`。新 worker 正式用例使用真实 CLI/生产 Host 服务，Bot repo 与平台 HTTP 为隔离夹具，不能称为 Electron UI 或真实租户验证。
 PS-01 的重启、失败重试及换绑继续由 `botsService.privateSync.test.ts` 覆盖；mobile 来源模拟不升级为实际手机证明。
 GR-UI-01 的失败/并发/迟到回调、禁用机器人继续由 `botBoundGroupsInteraction.test.ts` 覆盖，本轮 Desktop 用例只证明实际成功保存路径。
+**2026-10-25 停用**:桌面端远控弹窗删除 Bot Channel 配置入口后,`bots/feishu-bound-groups-ui.test.ts`(GR-UI-01)连同其入口断言一并删除;上面提到的 `botBoundGroupsInteraction.test.ts` 也随配置界面单测一起删除。以上两段保留为当时的记录,不再是当前覆盖。Bot 服务层与其余六个 bot e2e spec 未受影响。
+
 MN-01 增加同任务桌面续聊和跨任务拒绝；TP-03 扩展飞书/Lark × 条件 @ 四场景，覆盖当前消息引用、审批提醒管理员与普通问答条件提醒；模型继承继续由 `botsService.groups.test.ts` 验证。
 
 ### BOT-E2E-TP-06：其他机器人话题输入

@@ -49,6 +49,14 @@ import type { AssistantFeedbackHandler } from "@/v4/ConversationRowView.js";
 import { ConversationTurnNavigator } from "@/v4/ConversationTurnNavigator.js";
 import { syncConversationShareSelectionPanelLayout } from "@/v4/conversationShareSelectionPanelLayout.js";
 import type { ConversationRowRenderContext } from "@/v4/conversationRowContext.js";
+// 手机入口经 package export 直接挂载本组件，宿主需要构造 rowContext；
+// 类型与默认设置从同一入口导出，避免消费方深引 v4 内部路径。
+export type { ConversationRowRenderContext } from "@/v4/conversationRowContext.js";
+export { DEFAULT_CODE_PREVIEW_SETTINGS } from "@/lib/codePreviewSettings.js";
+export type { CodePreviewSettings } from "@/lib/codePreviewSettings.js";
+// 行渲染器内部用了 Tooltip，而它要求上层有 TooltipProvider（分享页那棵也是这样包的）。
+// 宿主必须自带这个 provider，所以从同一入口导出，避免消费方去深引 components/ui 内部路径。
+export { TooltipProvider } from "@/components/ui/tooltip.js";
 import { splitConversationTimelineLiveTail } from "@/v4/conversationTimelineLiveTail.js";
 import { armHighspeedFooterExpiryClock } from "@/highspeed/highspeedFooterExpiryClock.js";
 import {

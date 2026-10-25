@@ -494,14 +494,16 @@ export function useRootPlatformEffects({
       return;
     }
 
-    const paths = tabs
-      .filter(isWorkspaceTab)
-      // 启动期远程 workspace 现在会先以“断开占位 tab”恢复，
-      // 这些 tab 没有 remoteSessionId，但本质仍是远程会话，不能当成本地路径同步给主进程窗口列表。
-      // 这里改成按完整远程身份字段过滤，避免把远程路径误同步到本地窗口标签。
-      .filter((tab) => !tab.remoteSessionId && !tab.workspaceIdentity && !tab.remoteTarget)
-      .map((tab) => tab.workspacePath);
-    platform.syncWindowTabs(paths);
+    // 远端 workspace 也要上报:手机直连需要 identity 才能解析出可 attach 的 remote scope,
+    // 只给路径的话远端条目在 main 侧无法寻址。断连占位 tab 保留 identity、缺 remoteSessionId,
+    // 由 main 在连接时判定可用性(不可用就明确拒绝,而不是静默回退到本地服务)。
+    const workspaces = tabs.filter(isWorkspaceTab).map((tab) => ({
+      path: tab.workspacePath,
+      label: tab.label,
+      ...(tab.workspaceIdentity ? { workspaceIdentity: tab.workspaceIdentity } : {}),
+      ...(tab.remoteSessionId ? { remoteSessionId: tab.remoteSessionId } : {}),
+    }));
+    platform.syncWindowTabs(workspaces);
   }, [hasCompletedFullTabRestore, isDesktop, platform, tabs]);
 
   useEffect(() => {

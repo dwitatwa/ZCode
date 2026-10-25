@@ -4,6 +4,7 @@ import { app, BrowserWindow, Menu, MessageChannelMain } from "electron";
 import type { UtilityProcess as ElectronUtilityProcess } from "electron";
 import { HostMessageTypes, InternalChannels, PlatformChannels, type Locale } from "@zcode/shared";
 import { scheduleArmsBrowserPerfLoadNudge } from "./armsBrowserPerfLoadNudge.js";
+import type { WindowWorkspaceEntryMap } from "./windowWorkspaceEntries.js";
 import { createBrowserWindow } from "./desktopWindowChrome.js";
 import type { HostInitMessage, WindowBootstrapOptions } from "./desktopHostProcess.js";
 import type { StartupWorkspaceWarmupTarget } from "./startupWorkspace.js";
@@ -286,14 +287,15 @@ export function showCurrentWindowFromDock(primaryWindowCoordinator: {
 
 export function focusWorkspaceInExistingWindow(
   path: string,
-  windowWorkspaceMap: Map<number, Set<string>>,
+  windowWorkspaceEntryMap: WindowWorkspaceEntryMap,
   options?: { skipWindowId?: number },
 ): { activated: boolean; winId?: number } {
-  for (const [winId, pathSet] of windowWorkspaceMap) {
+  for (const [winId, entries] of windowWorkspaceEntryMap) {
     if (options?.skipWindowId === winId) {
       continue;
     }
-    if (!pathSet.has(path)) {
+    // 跨窗口去重只认路径:同一路径在另一个窗口已打开时,焦点切过去而不是重复开 tab。
+    if (!entries.some((entry) => entry.path === path)) {
       continue;
     }
 
@@ -307,7 +309,7 @@ export function focusWorkspaceInExistingWindow(
       return { activated: true, winId };
     }
 
-    windowWorkspaceMap.delete(winId);
+    windowWorkspaceEntryMap.delete(winId);
   }
 
   return { activated: false };

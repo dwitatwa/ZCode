@@ -104,7 +104,7 @@ export function createDesktopPlatform(options: {
       ? (sample) => window.zcode.reportRendererHeapSample!(sample)
       : undefined,
     showTaskNotification: (payload) => window.zcode.showTaskNotification(payload),
-    syncWindowTabs: (paths) => window.zcode.syncWindowTabs(paths),
+    syncWindowTabs: (workspaces) => window.zcode.syncWindowTabs(workspaces),
     syncWebRemoteControlWorkspaces: (workspaces) =>
       window.zcode.syncWebRemoteControlWorkspaces?.(workspaces),
     syncWindowUnreadCount: (count) => window.zcode.syncWindowUnreadCount(count),

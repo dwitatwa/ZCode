@@ -792,6 +792,54 @@ export function createRemoteWorkspaceSessionManager(options: {
     }
   }
 
+  /**
+   * 解析手机直连可用的远端 logical session。
+   *
+   * 手机只报 workspace identity,不报 sessionId —— 由这里在窗口自己的 route 表里匹配,
+   * 所以一个过期或伪造的 id 无法指向别的窗口的会话。不可 attach 时返回明确原因,
+   * 让连接被拒绝而不是静默回退到本地服务。
+   */
+  function findAttachableSessionForWorkspace(
+    win: BrowserWindow,
+    params: { workspacePath: string; workspaceIdentity: string },
+  ):
+    | {
+        ok: true;
+        remoteSessionId: string;
+        workspacePath: string;
+        workspaceIdentity: string;
+      }
+    | { ok: false; code: "REMOTE_SESSION_MISSING" | "REMOTE_SESSION_OFFLINE"; message: string } {
+    const matches = Array.from(routesBySessionId.entries()).filter(
+      ([, route]) =>
+        route.webContentsId === win.webContents.id &&
+        route.descriptor.workspacePath === params.workspacePath &&
+        route.descriptor.workspaceIdentity === params.workspaceIdentity,
+    );
+    if (matches.length === 0) {
+      return {
+        ok: false,
+        code: "REMOTE_SESSION_MISSING",
+        message: "远程 workspace 没有可用的连接,请在桌面端重新连接该 workspace。",
+      };
+    }
+    const attachable = matches.filter(([, route]) => route.attachmentState === "attachable");
+    if (attachable.length === 0) {
+      return {
+        ok: false,
+        code: "REMOTE_SESSION_OFFLINE",
+        message: "远程 workspace 当前离线,请在桌面端恢复连接后重试。",
+      };
+    }
+    const [remoteSessionId, route] = attachable[0]!;
+    return {
+      ok: true,
+      remoteSessionId,
+      workspacePath: route.descriptor.workspacePath ?? params.workspacePath,
+      workspaceIdentity: route.descriptor.workspaceIdentity ?? params.workspaceIdentity,
+    };
+  }
+
   function getRemoteConnectionStats(): RemoteConnectionStats {
     const activeRoutes = Array.from(routesBySessionId.values()).filter(
       (route) =>
@@ -1025,6 +1073,7 @@ export function createRemoteWorkspaceSessionManager(options: {
     getRemoteConnectionStats,
     disposeRemoteWorkspaceSession,
     disposeRemoteWorkspaceSessionsForWindow,
+    findAttachableSessionForWorkspace,
     disposeAllAndWaitForAppShutdown: async (_reason: string) => {
       appShutdownStarted = true;
       const error = new Error("应用正在退出，远程连接已取消");

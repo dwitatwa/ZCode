@@ -642,6 +642,22 @@ export type CuaOsSupport =
   | { kind: "not-applicable" };
 
 /**
+ * Renderer → Main 的窗口 workspace 条目。
+ *
+ * 之前这里只传路径,于是远端(尤其 WSL)workspace 无法表达「这是哪个 runtime」——
+ * 手机直连只能列本地项目。带上 identity 后,main 才能把远端条目解析成可 attach 的
+ * remote scope;本地条目两个字段都缺省。
+ */
+export interface WindowWorkspaceEntry {
+  path: string;
+  label?: string;
+  /** 远端 workspace 的稳定身份(`remote:wsl:...` 形态);本地缺省。 */
+  workspaceIdentity?: string;
+  /** 已连接远端 workspace 的 logical session;断连占位 tab 缺省。 */
+  remoteSessionId?: string;
+}
+
+/**
  * 平台操作接口 —— 替代直接访问 window.zcode
  *
  * 定义需要宿主环境（Electron main / Web server）参与的操作。
@@ -876,8 +892,13 @@ export interface IPlatformService {
    */
   reportRendererHeapSample?(sample: RendererHeapSample): void;
 
-  /** 同步当前窗口所有 tab 的 workspace 路径到 main 进程（用于跨窗口去重） */
-  syncWindowTabs(paths: string[]): void;
+  /**
+   * 同步当前窗口所有 tab 的 workspace 到 main 进程。
+   *
+   * 用途:跨窗口去重(按路径)与手机直连的 workspace 列表(按 identity 解析远端 scope)。
+   * 传条目而非裸路径,否则远端 workspace 到 main 就只剩一个无法寻址的字符串。
+   */
+  syncWindowTabs(workspaces: WindowWorkspaceEntry[]): void;
 
   /** 同步当前窗口里 Web 远程控制允许切换的 workspace；Web fallback 可忽略 */
   syncWebRemoteControlWorkspaces?(workspaces: WebRemoteControlWorkspaceTarget[]): void;

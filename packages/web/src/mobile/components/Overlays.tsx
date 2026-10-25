@@ -43,12 +43,15 @@ export function Sheet({
   onClose,
   children,
   footer,
+  className,
 }: {
   title?: string;
   subtitle?: string;
   onClose: () => void;
   children: ReactNode;
   footer?: ReactNode;
+  /** 浮层样式钩子：主屏的选择器要跟主屏同一套配色，其它屏保持旧视觉。 */
+  className?: string;
 }) {
   // Esc 关闭，桌面浏览器调试时也顺手。
   useEffect(() => {
@@ -62,7 +65,7 @@ export function Sheet({
   return (
     <div className="sheet-layer" role="dialog" aria-modal="true">
       <button className="sheet-mask" aria-label="Close" onClick={onClose} />
-      <div className="sheet-panel">
+      <div className={`sheet-panel${className ? ` ${className}` : ""}`}>
         {(title || subtitle) && (
           <div className="sheet-head">
             <div className="sheet-head-text">

@@ -1,3 +1,6 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { InternalChannels, PlatformChannels, type RemoteTarget } from "@zcode/shared";
 import { isAllowedExternalOpenUrl } from "../src/main/desktopMainIpcRemote.js";
@@ -153,16 +156,20 @@ describe("remote workspace connect telemetry IPC", () => {
     const listener = h.listeners.get(PlatformChannels.OpenExternal);
     expect(listener).toBeDefined();
 
+    // 用真实临时路径构造 file URL：Windows 上 file:///tmp/secret 不是绝对路径，
+    // fileURLToPath 会抛错并落到 warn 分支，openPath 断言随之失效。
+    const secretPath = join(tmpdir(), "secret");
+
     listener?.({}, "https://example.com/docs");
     listener?.({}, "http://localhost:3000/index.html");
-    listener?.({}, "file:///tmp/secret");
+    listener?.({}, pathToFileURL(secretPath).href);
     listener?.({}, "javascript:alert(1)");
     listener?.({}, "not a url");
 
     expect(h.shellOpenExternal).toHaveBeenCalledTimes(2);
     expect(h.shellOpenExternal).toHaveBeenCalledWith("https://example.com/docs");
     expect(h.shellOpenExternal).toHaveBeenCalledWith("http://localhost:3000/index.html");
-    await vi.waitFor(() => expect(h.shellOpenPath).toHaveBeenCalledWith("/tmp/secret"));
+    await vi.waitFor(() => expect(h.shellOpenPath).toHaveBeenCalledWith(secretPath));
     expect(options.logger.warn).toHaveBeenCalledTimes(2);
   });
 

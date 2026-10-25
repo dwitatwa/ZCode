@@ -1,0 +1,485 @@
+/*
+ * ZCode Mobile — 主屏设计系统（Obsidian）。
+ *
+ * 作用域:所有 token 与规则都挂在 .ms 下,不写 :root。
+ * 修复原因:主屏这次换的是整套配色与排版,而聊天屏、任务信息、composer、浮层都还是
+ * 旧视觉。如果把这些 token 放到 :root,那些屏会跟着变色 —— 这次改动只覆盖主屏。
+ *
+ * 视觉方向:暖黑 + 黄铜,单一强调色,元数据一律等宽小字。
+ * 关键约束:标题左侧不得出现任何圆点、竖条或图标。状态只走右侧槽位。
+ */
+
+/* Inter 随包发布:桌面端是本地应用,不能依赖运行时访问 Google Fonts。
+   只声明 latin 子集,避免把西里尔/希腊字形也打进包里。 */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("@fontsource-variable/inter/files/inter-latin-wght-normal.woff2") format("woff2-variations");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215,
+    U+FEFF, U+FFFD;
+}
+
+.ms {
+  --ms-ground: #0b0a09;
+  --ms-raised: #141210;
+  --ms-brass: #b8935a;
+  --ms-brass-dim: rgba(184, 147, 90, 0.055);
+  --ms-cream: #f0e9dd;
+  --ms-body: #ded7cb;
+  --ms-dim: #8b8378;
+  --ms-faint: #554d43;
+  --ms-label: #6b6053;
+  --ms-danger: #a4685c;
+  --ms-line: rgba(222, 215, 203, 0.065);
+  --ms-line-soft: rgba(222, 215, 203, 0.055);
+  /* 本地定义,不借用 mobile.css 的 --mono/--safe-b:主屏应当自足,
+     否则换掉旧样式表时这里会静默回退成继承字体。 */
+  --ms-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --ms-safe-b: env(safe-area-inset-bottom, 0px);
+
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--ms-ground);
+  color: var(--ms-body);
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.ms *,
+.ms *::before,
+.ms *::after {
+  box-sizing: border-box;
+}
+
+/* 只重置主屏自己的按钮。
+   修复原因:这里原先写的是 `.ms button`,选择器强度 (0,1,1) 高于浮层的
+   `.option-row` (0,1,0),于是浮层每一行的 padding 被清成 0,文字贴到面板边缘。
+   逐个列出按钮,浮层就不会再被误伤。 */
+.ms .ms-name-row,
+.ms .ms-new,
+.ms .ms-title,
+.ms .ms-row-menu,
+.ms .ms-archived-toggle,
+.ms .ms-archived-clear {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+/* ============================ 头部 ============================ */
+
+.ms-head {
+  flex-shrink: 0;
+  padding: 22px 22px 0;
+}
+
+.ms-kicker {
+  font-size: 8.5px;
+  font-weight: 600;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: var(--ms-label);
+}
+
+/* workspace 名就是标题。多个 workspace 时它变成打开选择器的按钮,单项目时是纯文本。 */
+.ms-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 7px;
+  /* 不设 width:100%:名字要按内容收窄,箭头才会紧跟在名字后面。 */
+  min-width: 0;
+  flex: 1;
+}
+
+/* 名字按内容宽度,不伸展。伸展会把箭头推到行尾,看起来像一个游离的小符号。 */
+.ms-name {
+  min-width: 0;
+  max-width: 100%;
+  font-size: 27px;
+  font-weight: 300;
+  letter-spacing: -0.032em;
+  line-height: 1.08;
+  color: var(--ms-cream);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 展开箭头:紧贴名字,和名字同一视觉基线。 */
+.ms-name-chev {
+  flex-shrink: 0;
+  color: var(--ms-faint);
+  /* 名字的行高比图标高,靠这个偏移让箭头落在名字的视觉中线上。 */
+  margin-top: 5px;
+  margin-left: -3px;
+}
+.ms-name-row:active .ms-name-chev {
+  color: var(--ms-dim);
+}
+
+.ms-name-row:active .ms-name {
+  color: #fff;
+}
+
+/* 新建任务:保持安静,不抢标题。 */
+.ms-new {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  background: rgba(184, 147, 90, 0.1);
+  color: var(--ms-brass);
+}
+.ms-new:active {
+  background: rgba(184, 147, 90, 0.2);
+}
+
+/* ============================ 列表 ============================ */
+
+.ms-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 22px calc(20px + var(--ms-safe-b));
+  -webkit-overflow-scrolling: touch;
+}
+
+.ms-section {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 20px 0 4px;
+  font-size: 8.5px;
+  font-weight: 600;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--ms-faint);
+}
+.ms-section.hot {
+  color: var(--ms-brass);
+}
+.ms-section-count {
+  color: var(--ms-faint);
+}
+
+.ms-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--ms-line);
+}
+
+/* 标题本身是打开任务的按钮:占满左侧剩余宽度,右槽和菜单才不会把它挤窄。 */
+.ms-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 14.5px;
+  font-weight: 400;
+  line-height: 1.32;
+  letter-spacing: -0.01em;
+  color: var(--ms-body);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ms-row-menu {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 18px;
+  margin-right: -6px;
+  color: #4a423b;
+}
+.ms-row-menu:active {
+  color: var(--ms-dim);
+}
+
+.ms-row.running .ms-title {
+  color: #f7f1e6;
+}
+.ms-row.past .ms-title {
+  color: var(--ms-dim);
+}
+.ms-row.current {
+  box-shadow: inset 2px 0 0 var(--ms-brass);
+  padding-left: 10px;
+  margin-left: -10px;
+}
+
+/* 右槽:一个位置只放一件事。 */
+.ms-slot {
+  flex-shrink: 0;
+  font-size: 8.5px;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: #4a423b;
+}
+.ms-slot.running {
+  color: var(--ms-brass);
+}
+.ms-slot.error {
+  color: var(--ms-danger);
+}
+/* 时间用等宽字体,这样一列数字在视觉上对齐。 */
+.ms-slot.quiet {
+  font-family: var(--ms-mono);
+  font-size: 9.5px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.ms-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 54px 20px;
+  text-align: center;
+}
+.ms-empty p {
+  margin: 0;
+  font-size: 14.5px;
+  color: var(--ms-body);
+}
+.ms-empty span {
+  font-family: var(--ms-mono);
+  font-size: 10.5px;
+  color: var(--ms-faint);
+}
+
+/* ========================== 归档区 ========================== */
+
+.ms-archived {
+  margin-top: 6px;
+}
+.ms-archived-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 14px 0 4px;
+  font-size: 8.5px;
+  font-weight: 600;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--ms-faint);
+}
+.ms-archived-toggle .ms-chev {
+  transition: transform 0.18s ease;
+}
+.ms-archived-toggle .ms-chev.open {
+  transform: rotate(180deg);
+}
+.ms-archived-count {
+  color: #4a423b;
+}
+.ms-archived-list {
+  padding-bottom: 4px;
+}
+.ms-archived-clear {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 12px 0;
+  padding: 7px 0;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ms-danger);
+}
+.ms-archived-clear:active {
+  color: #c4837a;
+}
+
+.ms-note {
+  padding: 12px 0;
+  font-family: var(--ms-mono);
+  font-size: 10.5px;
+  color: var(--ms-faint);
+}
+
+/* ====================== 工作区选择器 ====================== */
+
+/*
+ * 选择器浮层由 Sheet 渲染在 .ms 之外(document.body 层),所以这些规则挂在
+ * `.ms-sheet` 上,由调用方作为 Sheet 的 className 传入。这样浮层能跟主屏同一套
+ * 配色,而聊天屏、任务信息里的浮层不受影响。
+ */
+
+.ms-sheet {
+  --ms-sheet-ground: #141210;
+  --ms-sheet-raised: #1b1815;
+  --ms-sheet-cream: #f0e9dd;
+  --ms-sheet-body: #ded7cb;
+  --ms-sheet-dim: #8b8378;
+  --ms-sheet-faint: #554d43;
+  --ms-sheet-label: #6b6053;
+  --ms-sheet-brass: #b8935a;
+  --ms-sheet-line: rgba(222, 215, 203, 0.065);
+  --ms-sheet-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+
+  border-top: 1px solid var(--ms-sheet-line);
+  background: var(--ms-sheet-ground);
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.ms-sheet .sheet-head {
+  padding: 16px 18px 12px;
+  border-bottom: 1px solid var(--ms-sheet-line);
+}
+.ms-sheet .sheet-title {
+  font-size: 15px;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  color: var(--ms-sheet-cream);
+}
+.ms-sheet .sheet-subtitle {
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--ms-sheet-dim);
+}
+.ms-sheet .sheet-close {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  color: var(--ms-sheet-faint);
+}
+.ms-sheet .sheet-close:active {
+  background: var(--ms-sheet-raised);
+  color: var(--ms-sheet-body);
+}
+.ms-sheet .sheet-body {
+  padding: 4px 0 6px;
+}
+
+/* 分组标题:可用项与不可用项之间要有明确的分界,但不用线和框去切。 */
+.ms-sheet .ms-sheet-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 18px 5px;
+  font-size: 8.5px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--ms-sheet-faint);
+}
+.ms-sheet .ms-sheet-group:first-child {
+  padding-top: 8px;
+}
+
+.ms-sheet .option-row {
+  gap: 12px;
+  padding: 11px 18px;
+}
+.ms-sheet .option-row:active {
+  background: var(--ms-sheet-raised);
+}
+.ms-sheet .option-row-main {
+  gap: 3px;
+  min-width: 0;
+}
+.ms-sheet .option-row-label {
+  gap: 7px;
+  font-size: 14.5px;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  color: var(--ms-sheet-body);
+}
+.ms-sheet .option-row.selected .option-row-label {
+  color: var(--ms-sheet-cream);
+}
+.ms-sheet .option-row-sub {
+  font-family: var(--ms-sheet-mono);
+  font-size: 10px;
+  color: var(--ms-sheet-faint);
+}
+.ms-sheet .option-check {
+  color: var(--ms-sheet-brass);
+  font-size: 13px;
+}
+
+/* 不可用项:可见、可读、可解释,但不可选。 */
+.ms-sheet .option-row.unavailable {
+  cursor: default;
+}
+.ms-sheet .option-row.unavailable .option-row-label {
+  color: var(--ms-sheet-dim);
+}
+.ms-sheet .option-row.unavailable .option-row-sub {
+  color: #4c453d;
+}
+.ms-sheet .option-row.unavailable:active {
+  background: none;
+}
+/* 不可用原因写在名字下方,而不是挤进名字右侧:两个小标签会把名字截断。 */
+.ms-sheet .ms-sheet-note {
+  padding: 0 18px 8px;
+  font-family: var(--ms-sheet-mono);
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--ms-sheet-dim);
+}
+
+.ms-sheet .ms-sheet-empty {
+  padding: 18px;
+  font-size: 13px;
+  color: var(--ms-sheet-dim);
+}
+
+.ms-sheet .ws-remote-tag {
+  flex-shrink: 0;
+  padding: 1px 5px;
+  border: 1px solid rgba(222, 215, 203, 0.14);
+  border-radius: 4px;
+  font-family: var(--ms-sheet-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ms-sheet-faint);
+}
+
+.ms-sheet .sheet-cancel {
+  padding: 14px;
+  border-top: 1px solid var(--ms-sheet-line);
+  font-size: 13px;
+  color: var(--ms-sheet-dim);
+}
+.ms-sheet .sheet-cancel:active {
+  background: var(--ms-sheet-raised);
+  color: var(--ms-sheet-body);
+}
+
+/* ====================== 主屏内的标记 ====================== */
+
+.ms .ws-remote-tag {
+  color: var(--ms-faint);
+  border-color: rgba(222, 215, 203, 0.14);
+}
+.ms .ws-offline-tag {
+  color: var(--ms-brass);
+  border-color: var(--ms-brass);
+}

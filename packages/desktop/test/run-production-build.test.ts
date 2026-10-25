@@ -15,8 +15,14 @@ describe("createDesktopProductionBuildPlan", () => {
       baseEnv: { PATH: "/usr/bin" },
     });
 
-    expect(plan).toHaveLength(1);
-    expect(plan[0]).toMatchObject({
+    // 计划包含 mobile web bundle 与 desktop production bundles 两步；按 label 定位 desktop 步骤，
+    // 避免后续插入顺序变化时断言悄悄指向另一个步骤。
+    expect(plan.map((step) => step.label)).toEqual([
+      "mobile web bundle",
+      "desktop production bundles",
+    ]);
+    const desktopStep = plan.find((step) => step.label === "desktop production bundles");
+    expect(desktopStep).toMatchObject({
       label: "desktop production bundles",
       parallel: [
         {

@@ -11,6 +11,7 @@ import {
 import { logger } from "./logger.js";
 import { attachMobileDirectClient, type MobileDirectAttachHandle } from "./mobileDirectBridge.js";
 import { startMobileDirectServer, type MobileDirectServerHandle } from "./mobileDirectServer.js";
+import type { WindowWorkspaceEntryMap } from "./windowWorkspaceEntries.js";
 
 /**
  * 直连移动远控的生命周期编排。
@@ -21,12 +22,22 @@ import { startMobileDirectServer, type MobileDirectServerHandle } from "./mobile
 
 export interface MobileDirectConnectionManagerOptions {
   windowHostProcessMap: Map<number, ElectronUtilityProcess>;
-  /** 窗口当前打开的 workspace 路径集合(renderer 通过 SyncWindowTabs 同步)。 */
-  windowWorkspaceMap: Map<number, Set<string>>;
+  /** 窗口当前打开的 workspace 条目(renderer 通过 SyncWindowTabs 同步,含远端身份)。 */
+  windowWorkspaceEntryMap: WindowWorkspaceEntryMap;
+  /** 把远端 workspace 条目解析成可 attach 的 logical session;不可用时给出拒绝原因。 */
+  resolveRemoteSessionForWorkspace: (
+    win: BrowserWindow,
+    params: { workspacePath: string; workspaceIdentity: string },
+  ) => RemoteSessionResolution;
   /** 解析已构建的 @zcode/web dist 目录(含 mobile.html)。找不到时返回 null。 */
   resolveMobileDistRoot: () => string | null;
   onStatusChanged?: (status: MobileDirectConnectionStatus) => void;
 }
+
+/** 远端 workspace 的解析结果:成功给出 sessionId,失败给出可读原因。 */
+export type RemoteSessionResolution =
+  | { ok: true; remoteSessionId: string; workspacePath: string; workspaceIdentity: string }
+  | { ok: false; code: "REMOTE_SESSION_MISSING" | "REMOTE_SESSION_OFFLINE"; message: string };
 
 export interface MobileDirectConnectionManager {
   start(request: StartMobileDirectConnectionRequest): Promise<MobileDirectConnectionStatus>;
@@ -84,26 +95,39 @@ export function resolveDefaultMobileDistRoot(overrides?: {
  * 这正是「为什么只显示一个项目」的根因。现在把整个集合暴露出去,顺序保持插入序
  * (renderer 通过 SyncWindowTabs 同步的就是这个顺序),第一项即手机端默认选中项。
  *
- * 取不到任何路径时回退到进程目录,保证至少有一个可用的 workspace,手机不会白屏。
+ * 远端条目带上 workspaceIdentity,手机才能请求到对应的 runtime;没有可用条目时
+ * 返回空列表 —— 之前回退到进程目录会让手机显示一个并不属于用户的「项目」。
+ *
+ * 远端条目同时带上不可用原因:WSL 会话按空闲回收,所以「列出来时还在、点它时已经断了」
+ * 是常态。把状态一起发出去,手机才能在选择器里就把它标成不可用,而不是先连上、
+ * 再在 socket 已 open 之后收到拒绝(那时客户端已经把连接当成成功了)。
  */
 function resolveWindowWorkspaces(
   win: BrowserWindow,
-  windowWorkspaceMap: Map<number, Set<string>>,
+  options: Pick<
+    MobileDirectConnectionManagerOptions,
+    "windowWorkspaceEntryMap" | "resolveRemoteSessionForWorkspace"
+  >,
 ): ServerRemoteWorkspaceInfo[] {
-  const paths = windowWorkspaceMap.get(win.id);
-  const usable = paths
-    ? Array.from(paths)
-        .map((path) => path.trim())
-        .filter((path) => path.length > 0)
-    : [];
-  if (usable.length === 0) {
-    const fallback = process.cwd();
-    return [{ path: fallback, label: basename(fallback) || fallback }];
-  }
-  return usable.map((path) => ({
-    path,
-    label: basename(path) || path,
-  }));
+  const entries = options.windowWorkspaceEntryMap.get(win.id) ?? [];
+  return entries
+    .filter((entry) => entry.path.trim().length > 0)
+    .map((entry) => {
+      const base = {
+        path: entry.path,
+        label: entry.label || basename(entry.path) || entry.path,
+      };
+      if (!entry.workspaceIdentity) return base;
+      const resolved = options.resolveRemoteSessionForWorkspace(win, {
+        workspacePath: entry.path,
+        workspaceIdentity: entry.workspaceIdentity,
+      });
+      return {
+        ...base,
+        workspaceIdentity: entry.workspaceIdentity,
+        ...(resolved.ok ? {} : { unavailableCode: resolved.code }),
+      };
+    });
 }
 
 export function createMobileDirectConnectionManager(
@@ -220,10 +244,37 @@ export function createMobileDirectConnectionManager(
           staticRoot: distRoot,
           bindMode: request.bindMode,
           ...(request.port ? { port: request.port } : {}),
-          // 每次请求现取窗口的 workspace 集合,桌面新开的项目手机刷新即可见。
-          resolveWorkspaces: () => resolveWindowWorkspaces(win, options.windowWorkspaceMap),
+          // 每次请求现取窗口的 workspace 条目,桌面新开的项目手机刷新即可见。
+          resolveWorkspaces: () => resolveWindowWorkspaces(win, options),
           serverName: "ZCode Desktop",
-          onSocket: (socket) => attachHandle.connectSocket(socket),
+          // 手机只报 workspace identity;这里解析成 remote scope,解析不了就拒绝连接。
+          resolveSocketScope: (workspaceIdentity) => {
+            if (!workspaceIdentity) return { ok: true, scope: { kind: "local" } };
+            const entry = (options.windowWorkspaceEntryMap.get(win.id) ?? []).find(
+              (candidate) => candidate.workspaceIdentity === workspaceIdentity,
+            );
+            if (!entry) {
+              return {
+                ok: false,
+                message: "请求的 workspace 不在当前窗口中。",
+              };
+            }
+            const resolved = options.resolveRemoteSessionForWorkspace(win, {
+              workspacePath: entry.path,
+              workspaceIdentity,
+            });
+            if (!resolved.ok) return { ok: false, message: resolved.message };
+            return {
+              ok: true,
+              scope: {
+                kind: "remote",
+                remoteSessionId: resolved.remoteSessionId,
+                workspacePath: resolved.workspacePath,
+                workspaceIdentity: resolved.workspaceIdentity,
+              },
+            };
+          },
+          onSocket: (socket, scope) => attachHandle.connectSocket(socket, scope),
           logger: {
             info: (message, meta) => logger.info(message, meta),
             warn: (message, meta) => logger.warn(message, meta),

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { PlatformChannels } from "@zcode/shared";
+import { PlatformChannels, type WindowWorkspaceEntry } from "@zcode/shared";
 
 type IpcHandler = (...args: unknown[]) => unknown;
 
@@ -114,7 +114,7 @@ describe("registerPlatformIpcHandlers", () => {
       logger: { info: vi.fn(), warn: vi.fn() },
       applyApplicationLocale: vi.fn(async () => {}),
       focusWorkspaceInExistingWindow: vi.fn(() => ({ activated: false })),
-      windowWorkspaceMap: new Map(),
+      windowWorkspaceEntryMap: new Map(),
       windowUnreadCountMap: new Map(),
       currentApplicationLocale: () => "en-US",
       executeDesktopCommand: vi.fn(async () => {}),
@@ -152,7 +152,7 @@ describe("registerPlatformIpcHandlers", () => {
       logger: { info: vi.fn(), warn: vi.fn() },
       applyApplicationLocale: vi.fn(async () => {}),
       focusWorkspaceInExistingWindow: vi.fn(() => ({ activated: false })),
-      windowWorkspaceMap: new Map(),
+      windowWorkspaceEntryMap: new Map(),
       windowUnreadCountMap: new Map(),
       currentApplicationLocale: () => "en-US",
       executeDesktopCommand: vi.fn(async () => {}),
@@ -180,7 +180,7 @@ describe("registerPlatformIpcHandlers", () => {
   it("syncs window tab workspaces to main without the removed relay startup recovery", async () => {
     const { registerPlatformIpcHandlers } = await import("../src/main/desktopMainIpcPlatform.js");
     const syncTaskRealtimeWorkspaceKeys = vi.fn();
-    const windowWorkspaceMap = new Map<number, Set<string>>();
+    const windowWorkspaceEntryMap = new Map<number, WindowWorkspaceEntry[]>();
     const targetWindow = { id: 7 };
     electronMocks.browserWindowFromWebContents.mockReturnValue(targetWindow);
 
@@ -188,7 +188,7 @@ describe("registerPlatformIpcHandlers", () => {
       logger: { info: vi.fn(), warn: vi.fn() },
       applyApplicationLocale: vi.fn(async () => {}),
       focusWorkspaceInExistingWindow: vi.fn(() => ({ activated: false })),
-      windowWorkspaceMap,
+      windowWorkspaceEntryMap,
       windowUnreadCountMap: new Map(),
       currentApplicationLocale: () => "en-US",
       executeDesktopCommand: vi.fn(async () => {}),
@@ -200,14 +200,66 @@ describe("registerPlatformIpcHandlers", () => {
     });
 
     electronMocks.handlers.get(PlatformChannels.SyncWindowTabs)?.({ sender: {} }, [
-      "/workspace/one",
-      "/workspace/two",
+      { path: "/workspace/one" },
+      { path: "/workspace/two" },
     ]);
 
-    expect(windowWorkspaceMap.get(7)).toEqual(new Set(["/workspace/one", "/workspace/two"]));
+    expect(windowWorkspaceEntryMap.get(7)).toEqual([
+      { path: "/workspace/one" },
+      { path: "/workspace/two" },
+    ]);
     expect(syncTaskRealtimeWorkspaceKeys).toHaveBeenCalledWith(7, [
       "/workspace/one",
       "/workspace/two",
+    ]);
+  });
+
+  it("keeps remote workspace identity when syncing window tabs", async () => {
+    const { registerPlatformIpcHandlers } = await import("../src/main/desktopMainIpcPlatform.js");
+    const syncTaskRealtimeWorkspaceKeys = vi.fn();
+    const windowWorkspaceEntryMap = new Map<number, WindowWorkspaceEntry[]>();
+    electronMocks.browserWindowFromWebContents.mockReturnValue({ id: 9 });
+
+    registerPlatformIpcHandlers({
+      logger: { info: vi.fn(), warn: vi.fn() },
+      applyApplicationLocale: vi.fn(async () => {}),
+      focusWorkspaceInExistingWindow: vi.fn(() => ({ activated: false })),
+      windowWorkspaceEntryMap,
+      windowUnreadCountMap: new Map(),
+      currentApplicationLocale: () => "en-US",
+      executeDesktopCommand: vi.fn(async () => {}),
+      acknowledgePostUpdateReleaseNotes: vi.fn(async () => {}),
+      syncTaskRealtimeWorkspaceKeys,
+      getUpdateState: vi.fn(() => ({ status: "idle" })),
+      syncWebRemoteControlWorkspaces: vi.fn(),
+      deviceMid: "test-device-mid",
+    });
+
+    const wslIdentity = "remote:wsl:Ubuntu-24.04:/home/dev/project";
+    electronMocks.handlers.get(PlatformChannels.SyncWindowTabs)?.({ sender: {} }, [
+      { path: "C:\\local\\project", label: "project" },
+      {
+        path: "/home/dev/project",
+        label: "project",
+        workspaceIdentity: wslIdentity,
+        remoteSessionId: "session-1",
+      },
+    ]);
+
+    // 远端条目必须保留 identity，否则手机端无法解析出对应的 remote scope。
+    expect(windowWorkspaceEntryMap.get(9)).toEqual([
+      { path: "C:\\local\\project", label: "project" },
+      {
+        path: "/home/dev/project",
+        label: "project",
+        workspaceIdentity: wslIdentity,
+        remoteSessionId: "session-1",
+      },
+    ]);
+    // 实时通道 key 与 task service 的 resolveWorkspaceKey 一致：远端用 identity。
+    expect(syncTaskRealtimeWorkspaceKeys).toHaveBeenCalledWith(9, [
+      "C:\\local\\project",
+      wslIdentity,
     ]);
   });
 
@@ -223,7 +275,7 @@ describe("registerPlatformIpcHandlers", () => {
       logger: { info: vi.fn(), warn: vi.fn() },
       applyApplicationLocale: vi.fn(async () => {}),
       focusWorkspaceInExistingWindow: vi.fn(() => ({ activated: false })),
-      windowWorkspaceMap: new Map(),
+      windowWorkspaceEntryMap: new Map(),
       windowUnreadCountMap: new Map(),
       currentApplicationLocale: () => "en-US",
       executeDesktopCommand: vi.fn(async () => {}),

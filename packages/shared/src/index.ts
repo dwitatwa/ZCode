@@ -239,6 +239,7 @@ export type {
   UpdateCheckResultPayload,
   UpdateStatePayload,
   WSLDistro,
+  WindowWorkspaceEntry,
   ZCodeStdioTapDevState,
 } from "./platform.js";
 export type {

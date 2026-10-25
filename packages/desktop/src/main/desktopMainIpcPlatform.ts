@@ -11,7 +11,6 @@ import {
   PlatformChannels,
   rendererLogPayloadSchema,
   startMobileDirectConnectionRequestSchema,
-  stringArraySchema,
   webRemoteControlWorkspaceTargetsSchema,
   type DesktopCommandId,
   type ApplicationIconRequest,
@@ -29,6 +28,11 @@ import {
   type WindowControlsOverlayReadyPayload,
 } from "@zcode/shared";
 import { getInstalledEditors } from "./editors.js";
+import {
+  parseWindowWorkspaceEntries,
+  windowWorkspaceRealtimeKeys,
+  type WindowWorkspaceEntryMap,
+} from "./windowWorkspaceEntries.js";
 import { getApplicationIcon } from "./applicationIcons.js";
 import { exportLogs } from "./exportLogs.js";
 import { resolveCommunityUrl } from "./desktopCommandHandlers.js";
@@ -77,7 +81,7 @@ export function registerPlatformIpcHandlers(options: {
     path: string,
     extra?: { skipWindowId?: number },
   ) => { activated: boolean; winId?: number };
-  windowWorkspaceMap: Map<number, Set<string>>;
+  windowWorkspaceEntryMap: WindowWorkspaceEntryMap;
   windowUnreadCountMap: Map<number, number>;
   currentApplicationLocale: () => Locale;
   executeDesktopCommand: (
@@ -188,14 +192,21 @@ export function registerPlatformIpcHandlers(options: {
     }
 
     if (senderWin) {
-      let pathSet = options.windowWorkspaceMap.get(senderWin.id);
-      if (!pathSet) {
-        pathSet = new Set();
-        options.windowWorkspaceMap.set(senderWin.id, pathSet);
-        senderWin.on("closed", () => options.windowWorkspaceMap.delete(senderWin.id));
+      let entries = options.windowWorkspaceEntryMap.get(senderWin.id);
+      if (!entries) {
+        entries = [];
+        options.windowWorkspaceEntryMap.set(senderWin.id, entries);
+        senderWin.on("closed", () => options.windowWorkspaceEntryMap.delete(senderWin.id));
       }
-      pathSet.add(validatedPath);
-      options.syncTaskRealtimeWorkspaceKeys(senderWin.id, pathSet);
+      // 这里只新增本地路径:ActivateOrSetWorkspace 不携带远端身份,
+      // 远端条目一律由 SyncWindowTabs 全量上报,避免在这里猜 identity。
+      if (!entries.some((entry) => entry.path === validatedPath)) {
+        entries.push({ path: validatedPath });
+      }
+      options.syncTaskRealtimeWorkspaceKeys(
+        senderWin.id,
+        windowWorkspaceRealtimeKeys(entries),
+      );
     }
     return { activated: false };
   });
@@ -272,16 +283,16 @@ export function registerPlatformIpcHandlers(options: {
 
   ipcMain.handle(PlatformChannels.GetSystemLocale, () => options.resolveSystemLocale());
 
-  ipcMain.on(PlatformChannels.SyncWindowTabs, (event, paths: string[]) => {
-    const result = stringArraySchema.safeParse(paths);
-    if (!result.success) {
-      options.logger.warn("[sync-window-tabs] invalid payload:", formatZodError(result.error));
+  ipcMain.on(PlatformChannels.SyncWindowTabs, (event, payload: unknown) => {
+    const entries = parseWindowWorkspaceEntries(payload);
+    if (!entries) {
+      options.logger.warn("[sync-window-tabs] invalid payload:", payload);
       return;
     }
     const win = BrowserWindow.fromWebContents(event.sender);
     if (win) {
-      options.windowWorkspaceMap.set(win.id, new Set(result.data));
-      options.syncTaskRealtimeWorkspaceKeys(win.id, result.data);
+      options.windowWorkspaceEntryMap.set(win.id, entries);
+      options.syncTaskRealtimeWorkspaceKeys(win.id, windowWorkspaceRealtimeKeys(entries));
     }
   });
 

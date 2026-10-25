@@ -7,7 +7,7 @@
  * 用量/子代理/workflow 在可见时按 5s 走专用 RPC。
  */
 import { useEffect, useState, type ReactNode } from "react";
-import { RefreshCw } from "lucide-react";
+import { ChevronLeft, RefreshCw } from "lucide-react";
 import type { IZCodeAgentService, IZCodeTaskService } from "@zcode/services";
 import type {
   ZCodeSessionEndedSubagent,
@@ -97,6 +97,7 @@ export function InfoScreen({
   workspaceIdentity,
   snapshot,
   visible,
+  onBack,
 }: {
   service: IZCodeTaskService;
   agentService: IZCodeAgentService | null;
@@ -105,6 +106,7 @@ export function InfoScreen({
   workspaceIdentity?: string;
   snapshot: ConversationSnapshot | null;
   visible: boolean;
+  onBack: () => void;
 }) {
   const [usage, setUsage] = useState<ZCodeTaskTokenUsageResult | null>(null);
   const [subagents, setSubagents] = useState<SubagentsState>(EMPTY_SUBAGENTS);
@@ -192,6 +194,9 @@ export function InfoScreen({
   return (
     <>
       <header className="topbar">
+        <button className="topbar-back" onClick={onBack} aria-label="Back">
+          <ChevronLeft size={20} />
+        </button>
         <div className="topbar-title">Task info</div>
         {refreshing ? <RefreshCw size={13} className="topbar-spin" /> : null}
       </header>

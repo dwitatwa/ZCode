@@ -1,3 +1,6 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PlatformChannels } from "@zcode/shared";
 
@@ -126,11 +129,16 @@ describe("OpenExternal 对 file URL 的分流", () => {
   it("带锚点的 file URL 剥掉 hash 后仍走 shell.openPath", async () => {
     const { listener } = await registerOpenExternalListener();
     const sender = { getURL: vi.fn(() => "about:blank") };
+    // 用真实临时路径构造 file URL：Windows 上 file:///tmp/... 不是绝对路径，
+    // fileURLToPath 会抛 "File URL path must be absolute"，用例会落到 warn 分支。
+    const target = join(tmpdir(), "report.html");
 
-    listener({ sender }, "file:///tmp/report.html#section");
+    listener({ sender }, `${pathToFileURL(target).href}#section`);
 
     await vi.waitFor(() => expect(h.shellOpenPath).toHaveBeenCalledTimes(1));
-    expect(h.shellOpenPath).not.toHaveBeenCalledWith(expect.stringContaining("#"));
+    const openedPath = String(h.shellOpenPath.mock.calls[0]?.[0]);
+    expect(openedPath).toContain("report.html");
+    expect(openedPath).not.toContain("#");
     expect(h.shellOpenExternal).not.toHaveBeenCalled();
   });
 
@@ -149,10 +157,27 @@ describe("OpenExternal 对 file URL 的分流", () => {
     const { listener, options } = await registerOpenExternalListener();
     const sender = { getURL: vi.fn(() => "about:blank") };
 
-    listener({ sender }, "file://server/share/page.html");
+    // 相对 file URL 在两个平台都转换失败（"File URL path must be absolute"），用例因此跨平台一致。
+    listener({ sender }, "file:relative/page.html");
 
     await vi.waitFor(() => expect(options.logger.warn).toHaveBeenCalledTimes(1));
     expect(h.shellOpenPath).not.toHaveBeenCalled();
     expect(h.shellOpenExternal).not.toHaveBeenCalled();
   });
+
+  it.runIf(process.platform !== "win32")(
+    "带 host 的 file URL 在 POSIX 上无法转换为本地路径并记录 warn",
+    async () => {
+      const { listener, options } = await registerOpenExternalListener();
+      const sender = { getURL: vi.fn(() => "about:blank") };
+
+      // Windows 把带 host 的 file URL 解析为 UNC 路径（\\server\share\...），是可打开的本地路径；
+      // 产品内的 realpath 解析不存在的网络主机要阻塞约 21s，无法在用例时限内断言，故只在 POSIX 运行。
+      listener({ sender }, "file://server/share/page.html");
+
+      await vi.waitFor(() => expect(options.logger.warn).toHaveBeenCalledTimes(1));
+      expect(h.shellOpenPath).not.toHaveBeenCalled();
+      expect(h.shellOpenExternal).not.toHaveBeenCalled();
+    },
+  );
 });

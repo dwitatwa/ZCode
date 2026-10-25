@@ -1952,18 +1952,6 @@ const enUS: Record<string, string> = {
   "webRemoteControl.description":
     "Scan the QR code or open the link on your phone to control this workspace.",
   "webRemoteControl.themeMenu.trigger": "Choose theme",
-  "webRemoteControl.botChannel.title": "Use a bot channel",
-  "webRemoteControl.botChannel.description": "Connect a chat bot for longer-running mobile access.",
-  "webRemoteControl.botChannel.weixin.title": "Weixin",
-  "webRemoteControl.botChannel.weixin.description": "Open this workspace from Weixin chat.",
-  "webRemoteControl.botChannel.feishu.title": "Feishu",
-  "webRemoteControl.botChannel.feishu.description": "Open this workspace from Feishu.",
-  "webRemoteControl.botChannel.lark.title": "Lark",
-  "webRemoteControl.botChannel.lark.description": "Open this workspace from Lark.",
-  "webRemoteControl.botChannel.telegram.title": "Telegram",
-  "webRemoteControl.botChannel.telegram.description": "Open this workspace from Telegram.",
-  "webRemoteControl.botChannel.configure": "Configure in bot channels",
-  "webRemoteControl.botChannel.manageBots": "Manage bots",
   "webRemoteControl.direct.title": "Direct connection",
   "webRemoteControl.direct.description":
     "Start a local listener and scan the QR code from your phone to open this workspace without any chat channel.",

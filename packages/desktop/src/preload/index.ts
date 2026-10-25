@@ -77,6 +77,7 @@ import type {
   PrintPageToPdfResult,
   SSHConfigAliasOption,
   WebRemoteControlWorkspaceTarget,
+  WindowWorkspaceEntry,
   RemoteConnectionRuntimeLog,
   WindowControlsOverlayMetrics,
   WindowControlsOverlayReadyPayload,
@@ -350,8 +351,9 @@ contextBridge.exposeInMainWorld("zcode", {
   /** 检查目录是否已在其他窗口打开 */
   activateOrSetWorkspace: (path: string): Promise<{ activated: boolean }> =>
     ipcRenderer.invoke(PlatformChannels.ActivateOrSetWorkspace, path),
-  /** 同步当前窗口所有 tab 的 workspace 路径到 main 进程 */
-  syncWindowTabs: (paths: string[]) => ipcRenderer.send(PlatformChannels.SyncWindowTabs, paths),
+  /** 同步当前窗口所有 tab 的 workspace 条目(路径 + 远端身份)到 main 进程 */
+  syncWindowTabs: (workspaces: WindowWorkspaceEntry[]) =>
+    ipcRenderer.send(PlatformChannels.SyncWindowTabs, workspaces),
   /** 同步当前窗口里 Web 远程控制允许切换的 workspace */
   syncWebRemoteControlWorkspaces: (workspaces: WebRemoteControlWorkspaceTarget[]) =>
     ipcRenderer.send(PlatformChannels.SyncWebRemoteControlWorkspaces, workspaces),

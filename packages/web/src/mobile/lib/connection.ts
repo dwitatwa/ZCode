@@ -27,9 +27,23 @@ function resolveToken(): string {
 export const token = resolveToken();
 
 const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-export const wsUrl = `${wsProtocol}//${window.location.host}/ws${
-  token ? `?token=${encodeURIComponent(token)}` : ""
-}`;
+
+/**
+ * WS 地址。
+ *
+ * `?workspace=<identity>` 指定要接入哪个 workspace:省略即窗口本地服务,带上远端
+ * identity 时服务端会把它解析成对应的 remote scope。一个 attachment 只能绑定一个
+ * scope,所以切换 workspace 是重连而不是复用同一条连接。
+ */
+export function buildWsUrl(workspaceIdentity?: string): string {
+  const params = new URLSearchParams();
+  if (token) params.set("token", token);
+  if (workspaceIdentity) params.set("workspace", workspaceIdentity);
+  const query = params.toString();
+  return `${wsProtocol}//${window.location.host}/ws${query ? `?${query}` : ""}`;
+}
+
+export const wsUrl = buildWsUrl();
 
 export async function fetchServerInfo(): Promise<MobileServerInfo> {
   // /api/* 是受 token 保护的路径。只靠 URL 里的 ?token 种 HttpOnly cookie 再等下一次
@@ -46,8 +60,24 @@ export async function fetchServerInfo(): Promise<MobileServerInfo> {
   return (await res.json()) as MobileServerInfo;
 }
 
-export function connectMobile(): Promise<IServiceAccessor> {
-  return connectViaWebSocket(wsUrl);
+/**
+ * 连接指定 workspace 的 runtime;省略 identity 即窗口本地服务。
+ *
+ * `onClose` 只在连接落定之后断开时才触发。为什么需要它:connectViaWebSocket 只在
+ * open 之前断开时 reject,而桌面端会按空闲回收远端会话,「连上之后很快被关掉」是
+ * 真实情况。没有这个回调,手机会停在 ready 状态拿着一个死连接,任务列表静默失败,
+ * 界面看起来就像这个项目本来就没有任务。
+ */
+export function connectMobile(
+  workspaceIdentity?: string,
+  onClose?: (event: { code: number; reason: string }) => void,
+): Promise<IServiceAccessor> {
+  return connectViaWebSocket(
+    buildWsUrl(workspaceIdentity),
+    onClose
+      ? { onClose: (event) => onClose({ code: event.code, reason: event.reason }) }
+      : undefined,
+  );
 }
 
 /**

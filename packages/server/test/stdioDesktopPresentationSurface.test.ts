@@ -43,7 +43,11 @@ describe("stdio Desktop presentation surface", () => {
     restoreEnv(ZCODE_DESKTOP_CONTEXT_PROMPT_ENABLED_ENV, originalDesktopContextPromptEnabled);
     vi.restoreAllMocks();
     await Promise.all(
-      tempHomes.splice(0).map((home) => rm(home, { recursive: true, force: true })),
+      // Bugfix: Windows 上 provider runtime 的 .lock 等文件在句柄关闭后仍可能短暂不可删，
+      // 直接 rm 会以 EPERM 打断清理；按 Node 官方 Windows 文件锁机制退避重试。
+      tempHomes
+        .splice(0)
+        .map((home) => rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })),
     );
   });
 

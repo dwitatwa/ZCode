@@ -10,7 +10,7 @@ import {
   type MessagePortLike,
   type MessagePortPayload,
 } from "@zcode/rpc";
-import { HostMessageTypes } from "@zcode/shared";
+import { HostMessageTypes, type WindowHostAttachmentScope } from "@zcode/shared";
 
 /**
  * 直连移动远控的传输桥。
@@ -147,8 +147,14 @@ export function attachMobileDirectClient(params: {
    *
    * 不能复用同一条端口:Host 的 MessagePortProtocol 没有多路复用语义,
    * 多个客户端共用会让两条链路的 RPC 消息交错。独立端口天然隔离。
+   *
+   * scope 决定这条链路接到哪个 runtime:本地窗口服务,或某个远端(如 WSL)workspace。
+   * 一个 attachment 只能有一个 scope,所以手机切换 workspace 时重连而不是复用。
    */
-  const connectSocket = (wsSocket: ISocket): (() => void) => {
+  const connectSocket = (
+    wsSocket: ISocket,
+    scope: WindowHostAttachmentScope = { kind: "local" },
+  ): (() => void) => {
     if (disposed) {
       wsSocket.dispose();
       return () => undefined;
@@ -163,7 +169,7 @@ export function attachMobileDirectClient(params: {
           requestId: randomUUID(),
           attachmentId: clientAttachmentId,
           clientMode: "web-remote-replayable",
-          scope: { kind: "local" },
+          scope,
         },
         [port2],
       );

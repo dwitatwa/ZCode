@@ -14,6 +14,7 @@ import {
   type MobileDirectBindMode,
   type ServerRemoteInfo,
   type ServerRemoteWorkspaceInfo,
+  type WindowHostAttachmentScope,
 } from "@zcode/shared";
 
 /**
@@ -170,9 +171,19 @@ export interface StartMobileDirectServerOptions {
    * 返回顺序即手机端选择器的展示顺序,第一项是默认选中项。
    */
   resolveWorkspaces: () => readonly ServerRemoteWorkspaceInfo[];
+  /**
+   * 把手机请求的 workspace identity 解析成 attachment scope。
+   *
+   * 手机只报 identity,不报 sessionId —— scope 由这里在窗口自己的会话表里解析,
+   * 过期或伪造的 id 无法指向别的窗口。解析失败返回原因,连接被拒绝而不是回退到本地服务。
+   * 省略 identity 表示请求本地窗口(默认)。
+   */
+  resolveSocketScope?: (workspaceIdentity: string | undefined) =>
+    | { ok: true; scope: WindowHostAttachmentScope }
+    | { ok: false; message: string };
   serverName?: string;
   /** 每个新接入的 WebSocket 交给 bridge。返回该客户端的 disposer。 */
-  onSocket: (socket: ISocket) => () => void;
+  onSocket: (socket: ISocket, scope: WindowHostAttachmentScope) => () => void;
   logger: { info(message: string, meta?: unknown): void; warn(message: string, meta?: unknown): void };
 }
 
@@ -271,15 +282,28 @@ export async function startMobileDirectServer(
 
   app.get(
     "/ws",
-    upgradeWebSocket(() => {
-      // token middleware 已放行才可能走到 upgrade;这里只做端口桥接。
-      return {
+    (c) => {
+      // token middleware 已放行才可能走到这里。
+      // ?workspace=<identity> 指定要接入的 workspace;省略即本地窗口。
+      const requestedIdentity = c.req.query("workspace")?.trim() || undefined;
+      const resolved = options.resolveSocketScope
+        ? options.resolveSocketScope(requestedIdentity)
+        : { ok: true as const, scope: { kind: "local" as const } };
+      if (!resolved.ok) {
+        // 必须在握手之前拒绝:先 upgrade 成功再 close 的话,浏览器侧 open 事件已经
+        // 触发,connectViaWebSocket 的 promise 已经 resolve,手机就会把连接当成可用,
+        // 之后的 close(4004) 只剩一个没人读的 reason —— 界面表现为「这个项目没有任务」。
+        // 这里直接返回 HTTP 错误,握手不成立,客户端 promise reject。
+        return c.text(resolved.message, 400);
+      }
+      const scope = resolved.scope;
+      return upgradeWebSocket(() => ({
         onOpen(_event, ws) {
-          const detach = options.onSocket(wrapWebSocket(ws.raw as WebSocket));
+          const detach = options.onSocket(wrapWebSocket(ws.raw as WebSocket), scope);
           ws.raw?.once?.("close", () => detach());
         },
-      };
-    }),
+      }))(c);
+    },
   );
 
   app.get("*", async (c) => {

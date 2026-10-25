@@ -77,10 +77,6 @@ vi.mock("@/TaskSearchDialog.js", () => ({
   TaskSearchDialog: () => null,
 }));
 
-vi.mock("@/BotsDialog.js", () => ({
-  BotsDialog: () => null,
-}));
-
 vi.mock("@/WebRemoteControlTaskIndex.js", () => ({
   WebRemoteControlTaskIndex: ({
     renderBeforePinnedTasks,

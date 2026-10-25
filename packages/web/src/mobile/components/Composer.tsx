@@ -115,45 +115,51 @@ export function Composer({
 
   return (
     <>
-      <div className="composer">
-        <button className="composer-config" onClick={() => setSheet("config")} aria-label="Session settings">
-          <Sliders size={16} />
-        </button>
-
-        <textarea
-          ref={textareaRef}
-          className="composer-input"
-          rows={1}
-          value={input}
-          placeholder={generating ? "Queue a message…" : "Ask for changes…"}
-          onChange={(event) => setInput(event.target.value)}
-          onKeyDown={(event) => {
-            // 手机软键盘 Enter 通常是换行意图；只在非触屏（鼠标/桌面调试）上提交。
-            if (event.key === "Enter" && !event.shiftKey && !isTouchDevice()) {
-              event.preventDefault();
-              void submit();
-            }
-          }}
-        />
-
-        {generating ? (
+      <div className="cs-comp">
+        <div className="cs-comp-field">
           <button
-            className="composer-btn stop"
-            onClick={() => void onStop()}
-            aria-label="Stop generation"
+            className="cs-comp-config"
+            onClick={() => setSheet("config")}
+            aria-label="Session settings"
           >
-            <Square size={14} fill="currentColor" />
+            <Sliders size={15} />
           </button>
-        ) : null}
 
-        <button
-          className="composer-btn send"
-          onClick={() => void submit()}
-          disabled={sending || input.trim().length === 0}
-          aria-label="Send"
-        >
-          <ArrowUp size={17} strokeWidth={2.6} />
-        </button>
+          <textarea
+            ref={textareaRef}
+            className="cs-comp-input"
+            rows={1}
+            value={input}
+            placeholder={generating ? "Queue a message…" : "Ask for changes…"}
+            onChange={(event) => setInput(event.target.value)}
+            onKeyDown={(event) => {
+              // 手机软键盘 Enter 通常是换行意图；只在非触屏（鼠标/桌面调试）上提交。
+              if (event.key === "Enter" && !event.shiftKey && !isTouchDevice()) {
+                event.preventDefault();
+                void submit();
+              }
+            }}
+          />
+
+          {generating ? (
+            <button
+              className="cs-comp-btn stop"
+              onClick={() => void onStop()}
+              aria-label="Stop generation"
+            >
+              <Square size={12} fill="currentColor" />
+            </button>
+          ) : null}
+
+          <button
+            className="cs-comp-btn send"
+            onClick={() => void submit()}
+            disabled={sending || input.trim().length === 0}
+            aria-label="Send"
+          >
+            <ArrowUp size={16} strokeWidth={2.6} />
+          </button>
+        </div>
       </div>
 
       {/* 汇总配置面板：一次看到当前档位，点进去改单项。 */}

@@ -11,6 +11,7 @@
     "verify:live": "tsx --tsconfig tsconfig.verify.json scripts/verify-mobile-live.mts"
   },
   "dependencies": {
+    "@fontsource-variable/inter": "^5.3.0",
     "@zcode/client": "workspace:*",
     "@zcode/services": "workspace:*",
     "@zcode/shared": "workspace:*",

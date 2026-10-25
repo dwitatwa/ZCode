@@ -1,10 +1,14 @@
 /**
  * Explorer 屏：工作区切换 + 任务列表 + 归档区。
  *
+ * 视觉走「Obsidian」主屏设计系统（见 mainScreen.css）：暖黑底、单一黄铜强调色、
+ * 标题左侧没有任何圆点或竖条。状态只走每行右侧的一个槽位。
+ *
  * 交互相对旧版的改动：
- * - 去掉 antd-mobile 的 SwipeAction/Popover/CapsuleTabs，改成本项目自己的
- *   行内 ··· 菜单与胶囊切换器，视觉与时间线保持一致。
- * - 点击任务 = 打开；长按/··· = 归档 / 删除，避免误触。
+ * - 顶部不再分「品牌栏 + 工作区条」两行：workspace 名直接成为标题，多项目时它
+ *   就是打开选择器的按钮。新建任务收成标题右侧一个安静的小 +。
+ * - 每行右槽只放一件事：运行中/失败放状态词，其余放相对时间。
+ * - 点击任务 = 打开；行内 ··· 菜单保留归档 / 删除，避免误触。
  * - 归档区默认收起，放在列表底部。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -12,7 +16,6 @@ import {
   Archive,
   ArchiveRestore,
   ChevronDown,
-  FolderGit2,
   MoreHorizontal,
   Plus,
   Trash2,
@@ -20,23 +23,11 @@ import {
 import type { IZCodeTaskService } from "@zcode/services";
 import type { ZCodeTaskMeta } from "@zcode/shared";
 import type { MobileWorkspaceInfo } from "../lib/connection.js";
+import { workspaceLabel } from "../lib/workspaces.js";
+import { relativeTime, taskRightSlot } from "../lib/taskSlot.js";
 import { ConfirmSheet, Sheet, useToast } from "../components/Overlays.js";
-
-function workspaceLabel(workspace: MobileWorkspaceInfo): string {
-  if (workspace.label) return workspace.label;
-  const parts = workspace.path.replace(/[\\/]+$/, "").split(/[\\/]/);
-  return parts[parts.length - 1] || workspace.path;
-}
-
-function relativeTime(ts: number): string {
-  const diff = Date.now() - ts;
-  const minutes = Math.floor(diff / 60_000);
-  if (minutes < 1) return "now";
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h`;
-  return `${Math.floor(hours / 24)}d`;
-}
+import { WorkspacePicker } from "../components/WorkspacePicker.js";
+import "../mainScreen.css";
 
 type ConfirmState =
   | { kind: "delete"; task: ZCodeTaskMeta; archived: boolean }
@@ -44,40 +35,29 @@ type ConfirmState =
 
 function TaskRow({
   task,
-  active,
+  current,
   archived,
   onOpen,
   onMenu,
 }: {
   task: ZCodeTaskMeta;
-  active: boolean;
+  current: boolean;
   archived: boolean;
   onOpen: () => void;
   onMenu: () => void;
 }) {
+  const slot = taskRightSlot(task.status, relativeTime(task.updatedAt));
+  const toneClass =
+    archived ? "past" : task.status === "running" ? "running" : task.status === "error" ? "error" : "";
+
   return (
-    <div className={`task-row${active ? " active" : ""}${archived ? " archived" : ""}`}>
-      <button className="task-open" onClick={onOpen}>
-        <div className="task-title">{task.title}</div>
-        <div className="task-meta">
-          <span>{relativeTime(task.updatedAt)}</span>
-          {task.status ? (
-            <>
-              <span className="task-sep">·</span>
-              {task.status === "running" ? <span className="run-cursor" /> : null}
-              <span className={`task-status ${task.status}`}>{task.status}</span>
-            </>
-          ) : null}
-          {archived ? (
-            <>
-              <span className="task-sep">·</span>
-              <span>archived</span>
-            </>
-          ) : null}
-        </div>
+    <div className={`ms-row${toneClass ? ` ${toneClass}` : ""}${current ? " current" : ""}`}>
+      <button className="ms-title" onClick={onOpen} style={{ flex: 1, minWidth: 0 }}>
+        {task.title}
       </button>
-      <button className="task-menu" onClick={onMenu} aria-label="Task actions">
-        <MoreHorizontal size={17} />
+      <span className={`ms-slot ${slot.tone}`}>{slot.text}</span>
+      <button className="ms-row-menu" onClick={onMenu} aria-label="Task actions">
+        <MoreHorizontal size={15} />
       </button>
     </div>
   );
@@ -88,6 +68,7 @@ export function ExplorerScreen({
   workspaces,
   workspaceIndex,
   onWorkspaceIndexChange,
+  onRefreshWorkspaces,
   tasks,
   activeTaskId,
   onOpenTask,
@@ -99,6 +80,8 @@ export function ExplorerScreen({
   workspaces: MobileWorkspaceInfo[];
   workspaceIndex: number;
   onWorkspaceIndexChange: (index: number) => void;
+  /** 打开选择器时重新拉列表:远端项目可能刚在桌面端重新连上。 */
+  onRefreshWorkspaces?: () => void;
   tasks: ZCodeTaskMeta[];
   activeTaskId: string | null;
   onOpenTask: (meta: ZCodeTaskMeta) => void;
@@ -123,13 +106,18 @@ export function ExplorerScreen({
     };
   }, []);
 
+  // 依赖 workspace 的 path/identity 而不是对象本身：刷新列表会重建对象，按对象身份
+  // 重建这个回调会让归档区在每次刷新后重新拉一次（并重置 loading 态）。
+  const workspacePath = workspace?.path;
+  const workspaceIdentity = workspace?.workspaceIdentity;
+
   const loadArchived = useCallback(async () => {
-    if (!workspace) return;
+    if (!workspacePath) return;
     setArchivedLoading(true);
     try {
       const list = await service.listArchivedTasks({
-        workspacePath: workspace.path,
-        workspaceIdentity: workspace.workspaceIdentity,
+        workspacePath,
+        workspaceIdentity,
       });
       if (mounted.current) setArchived(list);
     } catch {
@@ -137,18 +125,19 @@ export function ExplorerScreen({
     } finally {
       if (mounted.current) setArchivedLoading(false);
     }
-  }, [service, workspace]);
+  }, [service, workspacePath, workspaceIdentity]);
 
   useEffect(() => {
     if (archivedOpen) void loadArchived();
   }, [archivedOpen, loadArchived]);
 
   if (!workspace) {
-    return <div className="empty">No workspace configured on the server.</div>;
+    return <div className="ms-empty">No workspace configured on the server.</div>;
   }
 
   const sorted = [...tasks].sort((a, b) => b.updatedAt - a.updatedAt);
   const sortedArchived = [...archived].sort((a, b) => b.updatedAt - a.updatedAt);
+  const runningCount = sorted.filter((task) => task.status === "running").length;
 
   const runArchive = async (task: ZCodeTaskMeta) => {
     try {
@@ -228,33 +217,55 @@ export function ExplorerScreen({
     }
   };
 
-  return (
+  // 箭头紧跟在名字后面,而不是被推到行尾:它属于这个名字,不是这一行的装饰。
+  // 用图标而不是 ▾ 文字字符 —— 字符的大小、基线和粗细都跟着字体走,在这个字号下
+  // 会变成一个小到看不清的游离符号。
+  const nameContent = (
     <>
-      <header className="topbar">
-        <div className="topbar-brand">
-          ZCode<span className="topbar-brand-sub">mobile</span>
+      <span className="ms-name">{workspaceLabel(workspace)}</span>
+      {workspaces.length > 1 ? (
+        <ChevronDown className="ms-name-chev" size={16} strokeWidth={1.75} aria-hidden="true" />
+      ) : null}
+      {workspace.workspaceIdentity ? <span className="ws-remote-tag">remote</span> : null}
+      {workspace.unavailableCode ? <span className="ws-remote-tag ws-offline-tag">offline</span> : null}
+    </>
+  );
+
+  return (
+    <div className="ms">
+      <header className="ms-head">
+        <div className="ms-kicker">Workspace</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {workspaces.length > 1 ? (
+            <button
+              className="ms-name-row"
+              onClick={() => {
+                setWsOpen(true);
+                onRefreshWorkspaces?.();
+              }}
+              aria-label={`Workspace: ${workspaceLabel(workspace)}`}
+            >
+              {nameContent}
+            </button>
+          ) : (
+            <div className="ms-name-row">{nameContent}</div>
+          )}
+          <button className="ms-new" onClick={onCreateTask} aria-label="New task">
+            <Plus size={15} />
+          </button>
         </div>
-        <button className="topbar-action" onClick={onCreateTask} aria-label="New task">
-          <Plus size={18} />
-        </button>
       </header>
 
-      {workspaces.length > 1 ? (
-        <button className="ws-picker" onClick={() => setWsOpen(true)}>
-          <FolderGit2 size={13} />
-          <span className="ws-picker-label">{workspaceLabel(workspace)}</span>
-          <ChevronDown size={13} />
-        </button>
-      ) : (
-        <div className="ws-static">
-          <FolderGit2 size={12} />
-          <span>{workspaceLabel(workspace)}</span>
-        </div>
-      )}
+      <div className="ms-scroll">
+        {runningCount > 0 ? (
+          <div className="ms-section hot">
+            <span>In progress</span>
+            <span className="ms-section-count">{runningCount}</span>
+          </div>
+        ) : null}
 
-      <div className="list-scroll">
         {sorted.length === 0 ? (
-          <div className="empty explorer-empty">
+          <div className="ms-empty">
             <p>No tasks.</p>
             <span>tap + to start one</span>
           </div>
@@ -264,37 +275,37 @@ export function ExplorerScreen({
           <TaskRow
             key={task.taskId}
             task={task}
-            active={task.taskId === activeTaskId}
+            current={task.taskId === activeTaskId}
             archived={false}
             onOpen={() => onOpenTask(task)}
             onMenu={() => setMenuTask({ task, archived: false })}
           />
         ))}
 
-        <div className="archived-block">
+        <div className="ms-archived">
           <button
-            className="archived-toggle"
+            className="ms-archived-toggle"
             onClick={() => setArchivedOpen((open) => !open)}
             aria-expanded={archivedOpen}
           >
-            <ChevronDown size={13} className={`chev${archivedOpen ? " open" : ""}`} />
+            <ChevronDown size={11} className={`ms-chev${archivedOpen ? " open" : ""}`} />
             <span>Archived</span>
-            {archived.length > 0 ? <span className="archived-count">{archived.length}</span> : null}
+            {archived.length > 0 ? <span className="ms-archived-count">{archived.length}</span> : null}
           </button>
 
           {archivedOpen ? (
-            <div className="archived-list">
+            <div className="ms-archived-list">
               {archivedLoading && sortedArchived.length === 0 ? (
-                <div className="note">Loading…</div>
+                <div className="ms-note">Loading…</div>
               ) : null}
               {!archivedLoading && sortedArchived.length === 0 ? (
-                <div className="note">Nothing archived.</div>
+                <div className="ms-note">Nothing archived.</div>
               ) : null}
               {sortedArchived.map((task) => (
                 <TaskRow
                   key={task.taskId}
                   task={task}
-                  active={false}
+                  current={false}
                   archived
                   onOpen={() => onOpenTask(task)}
                   onMenu={() => setMenuTask({ task, archived: true })}
@@ -302,10 +313,10 @@ export function ExplorerScreen({
               ))}
               {sortedArchived.length > 0 ? (
                 <button
-                  className="archived-clear"
+                  className="ms-archived-clear"
                   onClick={() => setConfirm({ kind: "delete-all", count: sortedArchived.length })}
                 >
-                  <Trash2 size={13} /> Delete all archived
+                  <Trash2 size={11} /> Delete all archived
                 </button>
               ) : null}
             </div>
@@ -314,24 +325,12 @@ export function ExplorerScreen({
       </div>
 
       {wsOpen ? (
-        <Sheet title="Workspace" onClose={() => setWsOpen(false)}>
-          {workspaces.map((item, index) => (
-            <button
-              key={`${item.path}-${index}`}
-              className={`option-row${index === workspaceIndex ? " selected" : ""}`}
-              onClick={() => {
-                setWsOpen(false);
-                onWorkspaceIndexChange(index);
-              }}
-            >
-              <span className="option-row-main">
-                <span className="option-row-label">{workspaceLabel(item)}</span>
-                <span className="option-row-sub">{item.path}</span>
-              </span>
-              {index === workspaceIndex ? <span className="option-check">✓</span> : null}
-            </button>
-          ))}
-        </Sheet>
+        <WorkspacePicker
+          workspaces={workspaces}
+          workspaceIndex={workspaceIndex}
+          onPick={onWorkspaceIndexChange}
+          onClose={() => setWsOpen(false)}
+        />
       ) : null}
 
       {menuTask ? (
@@ -403,6 +402,6 @@ export function ExplorerScreen({
           onClose={() => setConfirm(null)}
         />
       ) : null}
-    </>
+    </div>
   );
 }
