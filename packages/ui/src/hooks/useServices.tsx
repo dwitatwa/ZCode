@@ -6,7 +6,8 @@
 import { createContext, useContext, type ReactNode } from "react";
 import type { IServiceAccessor } from "@zcode/services";
 
-const ServiceContext = createContext<IServiceAccessor | null>(null);
+// 导出 Context 供宿主装配层读取（与 StoreProvider 导出 StoreContext 同例）。
+export const ServiceContext = createContext<IServiceAccessor | null>(null);
 
 export function ServiceProvider({
   services,

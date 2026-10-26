@@ -97,16 +97,16 @@ describe("conversation body wiring", () => {
     expect(chatSource).not.toContain("components/Timeline.js");
   });
 
-  it("loads the desktop renderer lazily", () => {
+  it("loads the desktop pane lazily", () => {
     // 静态 import 会把整棵 markdown 栈拉回首屏，首屏 gzip 从 226KB 涨到 1.6MB。
     // 断言要钉住"只有动态 import 这一个来源"：只要出现对同一模块的静态 import，
     // 打包器就会把它拉回入口，懒加载失效 —— 而 `lazy(` 字样仍然在，光查它抓不到。
-    expect(bodySource).toContain('await import("@zcode/ui/conversation-timeline")');
+    expect(bodySource).toContain('await import("@zcode/ui/v4-chat-pane")');
     expect(bodySource).toContain("lazy(async () =>");
     expect(bodySource).toContain("Suspense");
     // 同一模块不得有静态值导入。
     expect(bodySource).not.toMatch(
-      /^import\s+(?!type\b)[^;]*from\s+"@zcode\/ui\/conversation-timeline"/m,
+      /^import\s+(?!type\b)[^;]*from\s+"@zcode\/ui\/v4-chat-pane"/m,
     );
   });
 
@@ -170,8 +170,14 @@ describe("conversation body wiring", () => {
     expect(body).toMatch(/flex-direction:\s*column/);
     expect(body).toMatch(/flex:\s*1/);
     expect(body).toMatch(/min-height:\s*0/);
+    // 与桌面远控壳的包装 div(WorkspaceShellLayout)同款:显式 height:100%。
+    // 移动端浏览器不把 flex 撑出来的高度当 definite,pane 根部的 h-full 失去参照
+    // 就退回内容高度 —— 消息加载完 pane 随内容长高,sticky composer 沉到视口外。
+    expect(body).toMatch(/height:\s*100%/);
+    expect(body).toMatch(/min-width:\s*0/);
+    expect(body).toMatch(/position:\s*relative/);
     // 每个用到的容器类都必须真的有一条规则，否则它只是个没有样式的字符串。
-    for (const cls of ["cs-body-wrap", "cs-empty", "cs-loading"]) {
+    for (const cls of ["cs-body-wrap", "cs-loading"]) {
       expect(chatCss).toContain(`.${cls}`);
       expect(chatCss).toMatch(new RegExp(`\\.${cls}\\s*[,{]`));
     }

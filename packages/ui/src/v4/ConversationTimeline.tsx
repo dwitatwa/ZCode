@@ -943,9 +943,27 @@ function ConversationTimelineImpl({
     }
   }, []);
 
+  // bottomDock 的「有无」用 render 同步 ref 读：它来自 SessionPane 每次渲染新建的
+  // 元素（<ConversationBottomDockTransition> 字面量），若直接进 useCallback 依赖，
+  // 本回调身份随每次投影更新变化 → syncTurnNavigatorViewport / scrollToBottom /
+  // restoreScrollMemory 连锁失稳 → 会话切换 effect（依赖 scrollToBottom）在每次
+  // 渲染重跑并执行 virtualizer.measure()，把已测得的行高全部清回 72px 估算值。
+  // RO 之后不会再对尺寸未变的行发通知，错位便永久化 —— 实测手机冷开长会话
+  // （589 行补拉）稳定复现「行重叠 + composer 沉到视口外」。
+  const bottomDockPresenceRef = useRef(bottomDock);
+  bottomDockPresenceRef.current = bottomDock;
   const syncMessageLayerMask = useCallback((element: HTMLDivElement) => {
     const messageLayer = messageLayerRef.current;
     if (!messageLayer) return;
+
+    // 遮罩的唯一目的：让滑到 sticky composer 下面的消息淡出，而不是被硬边切断。
+    // 没有 dock 时（手机把 composer 放在渲染器外面）不存在被遮住的东西，
+    // 继续遮就只是把可见的正文淡成黑 —— 实测底部 96px 内容直接读不到。
+    if (!bottomDockPresenceRef.current) {
+      messageLayer.style.maskImage = "none";
+      messageLayer.style.webkitMaskImage = "none";
+      return;
+    }
 
     if (
       isAtBottom({
@@ -978,6 +996,8 @@ function ConversationTimelineImpl({
     messageLayer.style.webkitMaskPosition = `0 ${viewportTopInLayer}px`;
     messageLayer.style.maskSize = `100% ${viewportHeight}px`;
     messageLayer.style.webkitMaskSize = `100% ${viewportHeight}px`;
+    // 依赖必须保持空：dock 有无经 bottomDockPresenceRef 读取（见上方说明），
+    // 否则会连锁触发会话切换 effect 的 virtualizer.measure() 清空测高缓存。
   }, []);
 
   const syncTurnNavigatorViewport = useCallback(
@@ -1741,6 +1761,29 @@ function ConversationTimelineImpl({
           },
           scrollRef.current.scrollTop,
         );
+      }
+      // 前插历史行会让后续 loadOlder 分页继续前插：新窗口里的行换了 index/key 位置，
+      // virtualizer 的 measurement 会被 estimateSize（72px 兜底）整体替换 ——
+      // RO 回调虽会补测，但 resizeItem 的滚动补偿裁决在贴底滚动进行中会跳过提交，
+      // 表现为「行重叠 + sticky composer 沉到视口外」（手机冷开 589 行全量补拉最易触发）。
+      // 与宽度变化路径（上方 flushSync 批量 resizeItem）同款：前插 commit 后立即把
+      // 已挂载行的真实高度同步回 virtualizer，再计算锚点位移。
+      const contentColumn = virtualHistoryRef.current;
+      if (contentColumn) {
+        const measurements = Array.from(
+          contentColumn.querySelectorAll(":scope > [data-index]"),
+          (node) => ({
+            index: Number(node.getAttribute("data-index")),
+            height: measureElement(node, undefined),
+          }),
+        );
+        if (measurements.length > 0) {
+          for (const item of measurements) {
+            if (Number.isFinite(item.height) && item.height > 0) {
+              virtualizer.resizeItem(item.index, item.height);
+            }
+          }
+        }
       }
     }
     if (didPrepend) pendingPrependVirtualAnchorRef.current = null;

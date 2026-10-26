@@ -52,9 +52,7 @@
    (0,1,0),把面板每行 padding 清成 0。逐个列出即可。
    正文里的按钮不在这里 —— 它们属于桌面渲染器，样式由它自己带。 */
 .cs .cs-back,
-.cs .cs-info,
-.cs .cs-inline-action,
-.cs .cs-retry {
+.cs .cs-info {
   font: inherit;
   color: inherit;
   background: none;
@@ -147,30 +145,6 @@
   color: var(--cs-brass);
 }
 
-/* ======================== 提示条 ======================== */
-
-.cs-banner {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  flex-shrink: 0;
-  margin: 0 20px 10px;
-  padding: 7px 10px;
-  border-radius: 7px;
-  background: rgba(164, 104, 92, 0.1);
-  font-family: var(--cs-mono);
-  font-size: 10px;
-  line-height: 1.45;
-  color: var(--cs-danger);
-}
-.cs-retry {
-  font-family: var(--cs-mono);
-  font-size: 10px;
-  color: var(--cs-cream);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
 /*
  * 会话正文的样式不再在这里定义。
  * 正文由桌面的 ConversationTimeline 渲染（components/DesktopConversationBody.tsx），
@@ -193,11 +167,18 @@
   display: flex;
   flex-direction: column;
   flex: 1;
+  /* 与桌面远控壳的包装 div(WorkspaceShellLayout)完全同款:relative + h-full +
+     min-w-0。height:100% 对 flex 尺寸本身是惰性的(flex-basis 0% 优先),但移动端
+     浏览器不把「flex 撑出来的高度」当 definite —— pane 根部的 h-full(height:100%)
+     解析不到参照时会退回内容高度,pane 随消息长高,sticky composer 停到视口外,
+     虚拟列表的视口测量也跟着错。桌面壳显式给了 height:100%,手机必须同样给。 */
+  height: 100%;
   min-height: 0;
+  min-width: 0;
+  position: relative;
 }
 
-/* 空态与懒加载占位：两者都不是正文，不参与滚动。 */
-.cs-empty,
+/* 懒加载占位：不是正文，不参与滚动。 */
 .cs-loading {
   display: flex;
   flex: 1;
@@ -210,99 +191,6 @@
   font-size: 11px;
   color: var(--cs-faint);
   text-align: center;
-}
-.cs-empty p {
-  margin: 0;
-  color: var(--cs-dim);
-}
-.cs-empty span {
-  color: var(--cs-ghost);
-}
-
-/* ======================== Composer ======================== */
-
-/* 圆角输入框,不再是一条贴在分隔线上的直边栏。 */
-.cs-comp {
-  flex-shrink: 0;
-  padding: 8px 14px calc(12px + var(--cs-safe-b));
-}
-
-.cs-comp-field {
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
-  padding: 5px 5px 5px 10px;
-  border: 1px solid var(--cs-line);
-  border-radius: 12px;
-  background: var(--cs-raised);
-}
-.cs-comp-field:focus-within {
-  border-color: rgba(222, 215, 203, 0.14);
-}
-
-.cs-comp-config {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 30px;
-  flex-shrink: 0;
-  color: var(--cs-faint);
-}
-.cs-comp-config:active {
-  color: var(--cs-body);
-}
-
-.cs-comp-input {
-  flex: 1;
-  min-width: 0;
-  min-height: 30px;
-  max-height: 132px;
-  padding: 5px 0;
-  border: none;
-  background: none;
-  color: var(--cs-cream);
-  font-family: inherit;
-  font-size: 13.5px;
-  line-height: 1.45;
-  resize: none;
-  overflow-y: auto;
-  outline: none;
-}
-.cs-comp-input::placeholder {
-  color: var(--cs-faint);
-}
-/* 内容超过 max-height 时只留一根细条,不用系统默认宽度。 */
-.cs-comp-input::-webkit-scrollbar {
-  width: 3px;
-}
-.cs-comp-input::-webkit-scrollbar-thumb {
-  border-radius: 3px;
-  background: var(--cs-ghost);
-}
-
-.cs-comp-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  flex-shrink: 0;
-  border-radius: 50%;
-}
-.cs-comp-btn.send {
-  background: var(--cs-brass);
-  color: #141210;
-}
-.cs-comp-btn.send:disabled {
-  background: var(--cs-raised-2);
-  color: var(--cs-ghost);
-}
-.cs-comp-btn.stop {
-  border: 1px solid var(--cs-line);
-  border-radius: 50%;
-  background: var(--cs-raised-2);
-  color: var(--cs-danger);
 }
 
 /* ====================== 浮层(保持旧视觉) ====================== */

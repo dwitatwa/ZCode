@@ -30,6 +30,14 @@ import { usePromptEditorDragState } from "@/prompt-editor/usePromptEditorDragSta
 import { ChatPromptActionMenu } from "@/prompt-editor/ChatPromptActionMenu.js";
 import { useComposerToolbarFit } from "@/prompt-editor/useComposerToolbarFit.js";
 
+/**
+ * 输入壳对外暴露的编辑器句柄类型。
+ *
+ * 宿主需要持有 inputApiRef 才能读正文、清空、聚焦；把类型从这里转出，宿主就不必
+ * 直接依赖 LexicalChatInput 那个深层模块（那会把整个编辑器实现拉进宿主的类型图）。
+ */
+export type ChatPromptEditorHandle = LexicalChatInputHandle;
+
 function runAfterFrame(callback: () => void) {
   if (typeof requestAnimationFrame === "function") {
     requestAnimationFrame(callback);

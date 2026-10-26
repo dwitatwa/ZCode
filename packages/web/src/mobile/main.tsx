@@ -18,7 +18,7 @@
 import { StrictMode, useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type { IServiceAccessor } from "@zcode/services";
-import type { ZCodeConfigOption, ZCodeTaskMeta } from "@zcode/shared";
+import type { ZCodeTaskMeta } from "@zcode/shared";
 import "./mobile.css";
 // 会话正文由桌面的 ConversationTimeline 渲染（与桌面同一套行渲染器），
 // 它整棵是 Tailwind 写的，因此手机入口必须带上 @zcode/ui 的样式表。
@@ -34,7 +34,6 @@ import {
   workspaceLabel,
   workspaceScope,
 } from "./lib/workspaces.js";
-import { emptyDraft, type ComposerDraft } from "./lib/types.js";
 import { useConversationLive } from "./lib/live.js";
 import { ToastProvider, useToast } from "./components/Overlays.js";
 import { ExplorerScreen } from "./screens/ExplorerScreen.js";
@@ -46,8 +45,6 @@ type Phase = "connecting" | "ready" | "error" | "unavailable";
 type TaskView = "chat" | "info";
 
 const TASK_POLL_MS = 8000;
-/** composer 配置目录的刷新节奏；不参与时间线渲染。 */
-const CONFIG_POLL_MS = 6000;
 
 const servicesRef: { current: IServiceAccessor | null } = { current: null };
 
@@ -60,7 +57,6 @@ function MobileApp() {
   const [tasks, setTasks] = useState<ZCodeTaskMeta[]>([]);
   const [activeTask, setActiveTask] = useState<ZCodeTaskMeta | null>(null);
   const [taskView, setTaskView] = useState<TaskView>("chat");
-  const [draft, setDraft] = useState<ComposerDraft>(emptyDraft());
   const [reloadTick, setReloadTick] = useState(0);
   const [listLoaded, setListLoaded] = useState(false);
 
@@ -201,58 +197,17 @@ function MobileApp() {
     };
   }, [phase, connectScope, service, activeTask, reloadTick]);
 
-  /* --------------------------- 实时会话投影 --------------------------- */
+  /* --------------------------- 实时会话投影（Info 屏用） --------------------------- */
   //
-  // 取代原先的「3s 轮询快照 + 过滤流式事件」：那条路径会把 agent_message_chunk /
-  // agent_thought_chunk 直接丢掉（isTimelineRelevantEvent 只放行少数结构性事件），
-  // 且在事件放行后也只是当作"该重拉快照"的信号。现在直接复用桌面的
-  // SessionDataLayer + ConversationProjectionStore，文本/思考/工具行到达即渲染。
+  // Chat 屏的正文与 composer 现在由桌面 SessionPane 自己订阅（V4ChatPane 内部带
+  // V4ConversationProvider），这条 live 订阅只剩 Info 屏在用。同一条链路、同一份
+  // store；桌面 layer 自带连接级去重，不会因此开第二条订阅。
   const live = useConversationLive({
     accessor: servicesRef.current,
     workspacePath: activeTask?.workspacePath ?? null,
     workspaceIdentity: activeTask?.workspaceIdentity,
     sessionId: activeTask?.taskId ?? null,
   });
-
-  /* --------------------------- 配置目录（仅 composer 用） --------------------------- */
-  //
-  // 模型/思考档位的"可选清单"目前只有 legacy task snapshot 携带（v4 投影只给
-  // 当前 effective 的 model/provider/thought 与档位，不给跨供应商的模型目录）。
-  // 这条轮询只喂 composer 的选择器，不再参与时间线渲染 —— 时间线走上面的投影链路。
-  // 6s 足够：清单只在用户切换模型或服务端目录变化时改变。
-  const [configOptions, setConfigOptions] = useState<ZCodeConfigOption[] | undefined>(undefined);
-
-  useEffect(() => {
-    if (phase !== "ready" || !activeTask || !service) {
-      setConfigOptions(undefined);
-      return;
-    }
-    let cancelled = false;
-    const poll = async () => {
-      try {
-        const snap = await service.getTaskSnapshot({
-          taskId: activeTask.taskId,
-          workspacePath: activeTask.workspacePath,
-          workspaceIdentity: activeTask.workspaceIdentity,
-          clientMode: "web-remote-replayable",
-        });
-        if (!cancelled && snap) setConfigOptions(snap.configOptions);
-      } catch {
-        // 静默：下一轮重试
-      }
-    };
-    void poll();
-    const timer = setInterval(poll, CONFIG_POLL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-  }, [phase, activeTask, service, reloadTick]);
-
-  // 切换任务时清空草稿（投影租约由 useConversationLive 按 sessionId 自行切换）。
-  useEffect(() => {
-    setDraft(emptyDraft());
-  }, [activeTask?.taskId]);
 
   // Info 是单个任务的运行信息：换任务或退出任务都必须回到会话层，
   // 否则新任务的落地页会是一个上一任务留下的信息屏。
@@ -404,16 +359,11 @@ function MobileApp() {
         >
           {activeTask ? (
             <ChatScreen
-              service={service}
               accessor={accessor}
-              live={live}
               meta={activeTask}
-              configOptions={configOptions}
-              draft={draft}
-              onDraftChange={setDraft}
               onBack={closeTask}
               onOpenInfo={() => setTaskView("info")}
-              onMutated={refresh}
+              onSessionCreated={() => refresh()}
             />
           ) : null}
         </div>

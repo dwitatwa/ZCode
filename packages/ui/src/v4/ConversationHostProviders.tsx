@@ -11,15 +11,17 @@
  * 只要行渲染器还会向下取新的 context，这个文件就要跟着补 —— 判据不是"桌面 Root
  * 里有什么"，而是"渲染时真的会调用哪个 hook"。
  */
-import { type ReactNode, useContext, useLayoutEffect } from "react";
+import { type ReactNode, useContext, useEffect, useLayoutEffect } from "react";
 import type { IServiceAccessor } from "@zcode/services";
 import type { IPlatformService } from "@zcode/shared";
-import { ServiceProvider } from "@/hooks/useServices.js";
+import { ServiceProvider, ServiceContext } from "@/hooks/useServices.js";
 import { PlatformProvider } from "@/hooks/usePlatform.js";
 import { StoreContext, StoreProvider } from "@/store/StoreProvider.js";
 import { TabStoreProvider } from "@/store/TabStoreProvider.js";
 import { DiffsWorkerPoolProvider } from "@/root/DiffsWorkerPoolProvider.js";
+import { connectProviderSettingsSnapshot } from "@/lib/providerSettingsSnapshot.js";
 import { AssistantCodeCommentFeatureProvider } from "@/AssistantCodeCommentFeatureProvider.js";
+import { CodingPlanUpgradeDialogProvider } from "@/settings/CodingPlanUpgradeDialogProvider.js";
 import { TooltipProvider } from "@/components/ui/tooltip.js";
 import { ZCodeIntlProvider } from "@/i18n/IntlProvider.js";
 import { applyTheme } from "@/useTheme.js";
@@ -45,6 +47,25 @@ function PinDarkTheme() {
   return null;
 }
 
+/**
+ * 连接 provider-settings 快照（与桌面 Root 的 useRootProviderSettingsSnapshot 同一装配）。
+ *
+ * CodingPlanUpgradeDialogProvider 的套餐目录读这份模块级快照；桌面由 Root 连接，
+ * 非桌面宿主没有 Root，不连的话快照永远停在 loading，套餐目录永远取不到。
+ */
+function ConnectProviderSettingsSnapshot() {
+  const services = useContext(ServiceContext);
+  useEffect(() => {
+    if (!services) return;
+    const connection = connectProviderSettingsSnapshot(services.providerSettingsService);
+    void connection.ready.catch(() => {
+      // 读不到 Environment 视图只是套餐目录取不到；会话与发送不依赖它。
+    });
+    return () => connection.dispose();
+  }, [services]);
+  return null;
+}
+
 export interface ConversationHostProvidersProps {
   /** 宿主自己的服务面；手机是远端 WS 的 accessor。 */
   services: IServiceAccessor;
@@ -63,6 +84,12 @@ export interface ConversationHostProvidersProps {
  *
  * 顺序与桌面 Root 保持一致（Tooltip → Service → Platform → Store → TabStore →
  * DiffsWorkerPool），因为下层 provider 自己也可能用到上层的 context。
+ *
+ * CodingPlanUpgradeDialogProvider 是 composer 工具栏（V4ComposerToolbar）读的 ——
+ * 用的是**抛错版** hook，桌面 Root 在同一层位挂它；非桌面宿主不挂就会在打开会话时
+ * 整屏白掉（实测报 "useCodingPlanUpgradeDialog must be used within
+ * CodingPlanUpgradeDialogProvider"）。它内部读 provider-settings 快照，那份快照由
+ * Root 侧 connect；非桌面宿主必须自己连一次，否则套餐目录永远停在 loading。
  */
 export function ConversationHostProviders({
   services,
@@ -79,10 +106,15 @@ export function ConversationHostProviders({
               accessor 上那个。 */}
           <StoreProvider broadcastService={services.broadcastService}>
             <PinDarkTheme />
+            <ConnectProviderSettingsSnapshot />
             <TabStoreProvider>
               <DiffsWorkerPoolProvider>
                 <AssistantCodeCommentFeatureProvider>
-                  <ZCodeIntlProvider initialLocale={initialLocale}>{children}</ZCodeIntlProvider>
+                  <CodingPlanUpgradeDialogProvider>
+                    <ZCodeIntlProvider initialLocale={initialLocale}>
+                      {children}
+                    </ZCodeIntlProvider>
+                  </CodingPlanUpgradeDialogProvider>
                 </AssistantCodeCommentFeatureProvider>
               </DiffsWorkerPoolProvider>
             </TabStoreProvider>
