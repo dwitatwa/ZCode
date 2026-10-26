@@ -23,8 +23,14 @@ const ZERO_SHA = /^0{40}$/u;
 
 function resolvePnpmCliPath(env) {
   const npmExecPath = env.npm_execpath;
+  // Bugfix：只认 .cjs 入口。pnpm 独立安装（@pnpm/exe）时 npm_execpath 指向
+  // pnpm.exe，且路径里的 AppData\Local\pnpm\ 恰好包含 "\pnpm\"，旧的 contains
+  // 判断会误命中，随后 `node pnpm.exe` 把 PE 二进制当 JS 编译，报
+  // "MZ… This program cannot be run in DOS mode / SyntaxError"，pre-push 全量
+  // 测试在真正开跑前就崩溃。非 .cjs 一律走 PATH 扫描或 shell 回退。
   if (
     npmExecPath &&
+    npmExecPath.toLowerCase().endsWith(".cjs") &&
     (npmExecPath.toLowerCase().includes("\\pnpm\\") ||
       npmExecPath.toLowerCase().includes("/pnpm/"))
   ) {

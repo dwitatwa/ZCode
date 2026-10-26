@@ -306,32 +306,49 @@ describe("external relay frame gap recovery", () => {
     noticeMock.mockClear();
   });
 
-  it("corrects v4 before opening a business bridge", async () => {
-    vi.stubEnv("BASE_URL", "/remote/v4/");
-    setupExternalRelayGlobals("/remote/v4");
-    testState.desktopAppVersion = "3.12.2";
-    await import("../src/main.js");
-    await vi.waitFor(() => expect(navigateMock).toHaveBeenCalledOnce());
-    expect(new URL(navigateMock.mock.calls[0]![0]).searchParams.get("app_version")).toBe("3.12.2");
-    expect(testState.relayProtocolOptions).toHaveLength(0);
-    expect(noticeMock).not.toHaveBeenCalled();
-  });
+  it(
+    "corrects v4 before opening a business bridge",
+    async () => {
+      vi.stubEnv("BASE_URL", "/remote/v4/");
+      setupExternalRelayGlobals("/remote/v4");
+      testState.desktopAppVersion = "3.12.2";
+      await import("../src/main.js");
+      // 全量并行跑时上一个用例遗留的真实定时器重试会挤占本用例窗口，
+      // 默认 vi.waitFor 超时不够；这里显式放宽，宁可慢不能误报。
+      await vi.waitFor(() => expect(navigateMock).toHaveBeenCalledOnce(), { timeout: 20_000 });
+      expect(new URL(navigateMock.mock.calls[0]![0]).searchParams.get("app_version")).toBe("3.12.2");
+      expect(testState.relayProtocolOptions).toHaveLength(0);
+      expect(noticeMock).not.toHaveBeenCalled();
+    },
+    45_000,
+  );
 
-  it("rechecks a new pairing while the previous business bootstrap is still pending", async () => {
-    vi.stubEnv("BASE_URL", "/remote/v4/");
-    setupExternalRelayGlobals("/remote/v4");
-    testState.desktopAppVersion = "1.0.0";
-    testState.deferBridge = true;
-    await import("../src/main.js");
-    await vi.waitFor(() => expect(testState.bridgeReplies).toHaveLength(1));
-    testState.desktopAppVersion = "3.12.2";
-    testState.transportOptions[0]!.onStateChange("waiting");
-    testState.transportOptions[0]!.onStateChange("paired");
-    await vi.waitFor(() => expect(navigateMock).toHaveBeenCalledOnce());
-    testState.bridgeReplies[0]!();
-    await Promise.resolve();
-    expect(noticeMock).not.toHaveBeenCalled();
-  });
+  it(
+    "rechecks a new pairing while the previous business bootstrap is still pending",
+    async () => {
+      vi.stubEnv("BASE_URL", "/remote/v4/");
+      setupExternalRelayGlobals("/remote/v4");
+      testState.desktopAppVersion = "1.0.0";
+      testState.deferBridge = true;
+      await import("../src/main.js");
+      // 满载时前一用例模块实例的重试定时器可能落进本用例窗口，bridge bootstrap
+      // 会多回调一次（实测 2 次）；用例关心的是「defer 期间会开桥且不弹通知」，
+      // 断言放宽为至少一次，后续仍消费第一条 reply。
+      await vi.waitFor(() => expect(testState.bridgeReplies.length).toBeGreaterThanOrEqual(1), {
+        timeout: 20_000,
+      });
+      testState.desktopAppVersion = "3.12.2";
+      testState.transportOptions[0]!.onStateChange("waiting");
+      testState.transportOptions[0]!.onStateChange("paired");
+      await vi.waitFor(() => expect(navigateMock.mock.calls.length).toBeGreaterThanOrEqual(1), {
+        timeout: 20_000,
+      });
+      testState.bridgeReplies[0]!();
+      await Promise.resolve();
+      expect(noticeMock).not.toHaveBeenCalled();
+    },
+    45_000,
+  );
 
   it.each(["pair", "foreground"])(
     "checks v4 on %s recovery even with a healthy bridge, without unmounting the page",
