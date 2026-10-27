@@ -5,11 +5,12 @@
 // 先保留集中实现，后续再按“参数解析/构建执行/产物校验”拆分模块。
 
 import { spawn } from "node:child_process";
-import { readdirSync, statSync } from "node:fs";
+import { copyFileSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import process from "node:process";
 import { dirname, join, resolve } from "node:path";
+import { homedir } from "node:os";
 import { pathToFileURL } from "node:url";
 import { collectRuntimeModuleClosureEntries } from "./runtime-dependency-closure.mjs";
 import { resolveDesktopProductIdentity } from "./desktop-product-identity.mjs";
@@ -762,6 +763,34 @@ async function main() {
       artifactPath,
     ]),
   );
+
+  copyNsisArtifactOutsideWorkspace(os, artifactPath);
+}
+
+// 本机（Windows 24H2）实测：NSIS 编译产物（uninstaller 生成桩和最终安装器）只要位于
+// 仓库目录内，双击执行就会弹 “NSIS Error — Error writing temporary file”；同一文件复制
+// 到仓库外运行则一切正常，甚至能把文件正常写回仓库内的 outDir。失败只跟随 exe 自身
+// 路径，与 cwd、TEMP、ACL、Defender、磁盘均无关，底层机制未定位
+// （详见 docs/desktop/windows-installer-stub-diagnostics.md）。
+// 因此 Windows NSIS 产物构建完成后，自动复制一份到仓库外的固定目录，使用者直接从
+// 那里安装，省去手动复制的步骤。非 NSIS 产物（mac/linux）与已配置外部输出目录时跳过。
+function copyNsisArtifactOutsideWorkspace(os, artifactPath) {
+  if (process.platform !== "win32" || os !== "win") {
+    return;
+  }
+  if (!artifactPath.toLowerCase().endsWith(".exe")) {
+    return;
+  }
+  if (!resolve(desktopRoot, desktopDistDir).startsWith(desktopRoot)) {
+    // 输出目录已经配置在仓库外，产物本身不受路径限制。
+    return;
+  }
+  const targetDir =
+    process.env.ZCODE_INSTALLER_OUT_DIR ?? resolve(process.env.USERPROFILE ?? homedir(), "ZcodeInstall");
+  mkdirSync(targetDir, { recursive: true });
+  const targetPath = join(targetDir, artifactPath.replace(/^[:/\\]+/, "").split(/[\\/]/).join("-"));
+  copyFileSync(artifactPath, targetPath);
+  console.warn(`[bundle] NSIS 安装器已复制到仓库外（在仓库内运行会弹 NSIS Error）：${targetPath}`);
 }
 
 const entryHref = process.argv[1] ? pathToFileURL(process.argv[1]).href : null;

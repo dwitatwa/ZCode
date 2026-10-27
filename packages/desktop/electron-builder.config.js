@@ -130,6 +130,11 @@ const REQUIRED_ASAR_RUNTIME_MODULES = [
   // 要到 bundle 校验阶段才报「缺少运行时依赖 pend」。这里以 yauzl 作为闭包根注入，
   // 与 bundle.mjs 的校验名单保持一致，让递归依赖收集把 pend 一起补进产物。
   "yauzl",
+  // 修复原因：afterPack 的缺失扫描只按闭包根判断，根（yauzl）已在 app.asar 里就整条闭包
+  // 跳过注入，于是子依赖 pend 不会被补齐。本机产物实测：app.asar 有 yauzl、没有 pend，
+  // 安装包启动即报 Cannot find module 'pend'（Require stack: yauzl/fd-slicer.js）。
+  // 把 pend 也列为闭包根，缺失时由 afterPack 单独补齐，避免根存在掩盖子依赖缺失。
+  "pend",
   // Bugfix: 飞书 SDK 被 desktop main/host 外置后，安装包运行时必须能从 app.asar 解析到它。
   // 这里显式注入 scoped 包，避免开发态正常、生产包启动时才报 Cannot find module。
   "@larksuiteoapi/node-sdk",
