@@ -25,6 +25,8 @@ const mobileCss = readSource("../src/mobile/mobile.css");
 const mainSource = readSource("../src/mobile/main.tsx");
 const platformSource = readSource("../src/mobile/lib/platform.ts");
 const hostProvidersSource = readSource("../../ui/src/v4/ConversationHostProviders.tsx");
+const chatPaneSource = readSource("../../ui/src/v4/V4ChatPane.tsx");
+const conversationContextSource = readSource("../../ui/src/v4/V4ConversationContext.tsx");
 
 describe("header meta values", () => {
   it("uses the last path segment as the project name", () => {
@@ -181,6 +183,31 @@ describe("conversation body wiring", () => {
       expect(chatCss).toContain(`.${cls}`);
       expect(chatCss).toMatch(new RegExp(`\\.${cls}\\s*[,{]`));
     }
+  });
+});
+
+describe("remote workspace conversation", () => {
+  it("registers the phone connection as a remote session", () => {
+    // 手机聊天区走桌面 V4ConversationProvider:远端 workspace 解析不到 session 就停在
+    // remote-waiting 并渲染 null —— 表现就是远端项目新会话整屏空白、composer 不出现。
+    // 连接层必须在连上后按 identity 登记(remoteSessionRegistration),否则远端永远空白。
+    expect(mainSource).toContain("registerMobileRemoteWorkspaceSession(");
+    expect(mainSource).toContain("workspaceIdentity: remoteIdentity");
+    // 登记与连接同生共死:连接关闭回调与 effect 清理都要撤登记。
+    expect(mainSource).toContain("dropRegistration();");
+    const effect = mainSource.match(/return \(\) => \{[^}]*dropRegistration\(\);/);
+    expect(effect).not.toBeNull();
+  });
+
+  it("shows a connecting placeholder while the remote target is unresolved", () => {
+    // 空白正文与「本来就没有内容」无法区分;未解析时必须给出可见的连接中占位。
+    expect(chatSource).toContain('pending={<div className="cs-loading">Connecting...</div>}');
+    // 占位要真正传到桌面 gate:手机壳 → V4ChatPane → V4ConversationProvider。
+    expect(bodySource).toMatch(/pending\?: ReactNode/);
+    expect(bodySource).toContain("pending={pending}");
+    expect(chatPaneSource).toContain("pending={pending}");
+    // 桌面 gate 的缺省行为不变:不传占位时仍是渲染 null。
+    expect(conversationContextSource).toMatch(/return pending \?\? null;/);
   });
 });
 

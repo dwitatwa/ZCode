@@ -15,7 +15,7 @@
  *   2. 从 "@zcode/ui" 根 barrel 导入 —— 会带出整个桌面 app shell
  *      （工作台、会话面板、全部 shiki 语法包），实测多付约 1MB gzip。
  */
-import { Suspense, lazy } from "react";
+import { Suspense, lazy, type ReactNode } from "react";
 import type { IServiceAccessor } from "@zcode/services";
 import type { ZCodeProvider } from "@zcode/shared";
 import { createMobilePlatform } from "../lib/platform.js";
@@ -44,9 +44,13 @@ const LazyHostProviders = lazy(async () => {
 export interface DesktopChatPaneProps {
   workspacePath: string;
   workspaceIdentity?: string;
-  /** 任务 id；null = 草稿首发。 */
+  /** 任务 id;null = 草稿首发。 */
   sessionId: string | null;
   provider?: ZCodeProvider;
+  /**
+   * 连接未就绪(远端目标尚未解析等)时渲染的占位;不传保持桌面原行为(渲染 null)。
+   */
+  pending?: ReactNode;
   /** 会话首发后由桌面 pane 报告真实 session id。 */
   onSessionCreated?: (sessionId: string) => void;
   onSessionDeleted?: () => void;
@@ -64,6 +68,7 @@ export function DesktopChatPane({
   workspaceIdentity,
   sessionId,
   provider,
+  pending,
   onSessionCreated,
   onSessionDeleted,
 }: DesktopChatPaneProps) {
@@ -74,6 +79,7 @@ export function DesktopChatPane({
       sessionId={sessionId}
       provider={provider}
       compactForRemoteControl
+      pending={pending}
       onSessionCreated={onSessionCreated}
       onSessionDeleted={onSessionDeleted}
     />

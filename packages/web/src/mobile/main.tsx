@@ -28,6 +28,10 @@ import "@zcode/ui/styles.css";
 import { applyTheme } from "@zcode/ui/useTheme";
 import { connectMobile, fetchServerInfo, type MobileWorkspaceInfo } from "./lib/connection.js";
 import {
+  registerMobileRemoteWorkspaceSession,
+  type MobileRemoteSessionRegistration,
+} from "./lib/remoteSessionRegistration.js";
+import {
   nextAvailableWorkspaceIndex,
   resolveWorkspaceIndex,
   unavailableNote,
@@ -132,10 +136,19 @@ function MobileApp() {
     servicesRef.current = null;
     connectedScopeRef.current = null;
     setPhase("connecting");
+    // 远端 workspace 的 session 登记与连接同生共死:连上即登记(聊天区桌面 pane 的
+    // 远端解析依赖它),关闭/出错/换 workspace 即注销。registration 只在 isCurrent
+    // 的回调里产生,被替换的旧代连接不会登记,也无需注销。
+    let registration: MobileRemoteSessionRegistration | null = null;
+    const dropRegistration = () => {
+      registration?.dispose();
+      registration = null;
+    };
     connectMobile(remoteIdentity, (event) => {
-      // 连接落定后才断开：手机会停在 ready 拿着死连接，任务列表静默失败，
-      // 界面看起来就像这个项目没有任务。回到错误态，把原因留给用户。
+      // 连接落定后才断开:手机会停在 ready 拿着死连接,任务列表静默失败,
+      // 界面看起来就像这个项目没有任务。回到错误态,把原因留给用户。
       if (!isCurrent()) return;
+      dropRegistration();
       servicesRef.current = null;
       connectedScopeRef.current = null;
       setPhase("error");
@@ -147,6 +160,12 @@ function MobileApp() {
         if (!isCurrent()) return;
         servicesRef.current = accessor;
         connectedScopeRef.current = connectScope;
+        if (remoteIdentity) {
+          registration = registerMobileRemoteWorkspaceSession({
+            workspaceIdentity: remoteIdentity,
+            services: accessor,
+          });
+        }
         setPhase("ready");
       })
       .catch((error) => {
@@ -154,6 +173,11 @@ function MobileApp() {
         setPhase("error");
         setErrorMsg(error instanceof Error ? error.message : String(error));
       });
+    return () => {
+      // 换 workspace 或组件卸载时撤掉本连接的登记。守卫在 dispose 内部:若同一
+      // identity 已被新连接重新登记,这里不会误删新登记。
+      dropRegistration();
+    };
   }, [listLoaded, connectScope, remoteIdentity, unavailableCode, workspace?.path]);
 
   // 连上但没拿到 workspace 时每 5s 重试一次 server-info。

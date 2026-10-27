@@ -182,6 +182,13 @@ function MountProbe({ onMount }: { onMount: () => void }) {
   return null;
 }
 
+function PendingProbe({ onPendingMount }: { onPendingMount: () => void }) {
+  useEffect(() => {
+    onPendingMount();
+  }, [onPendingMount]);
+  return null;
+}
+
 function AttachmentReadProbe({
   onReady,
 }: {
@@ -255,6 +262,51 @@ describe("V4ConversationProvider remote readiness", () => {
     });
 
     expect(onMount).toHaveBeenCalledTimes(1);
+  });
+
+  it("远端解析期间渲染 pending 占位,解析后换成正文且只挂载一次", () => {
+    const container = installMinimalDom();
+    const root = createRoot(container);
+    mountedRoots.push(root);
+    const baseServices = makeServices("base");
+    const remoteServices = makeServices("remote-pending");
+    const onMount = vi.fn();
+    const onPendingMount = vi.fn();
+    const workspaceIdentity = "remote:ssh:dev:/workspace/pending";
+
+    act(() => {
+      root.render(
+        createElement(
+          TestProviders,
+          { services: baseServices },
+          createElement(
+            V4ConversationProvider,
+            {
+              workspacePath: "/workspace/pending",
+              workspaceIdentity,
+              pending: createElement(PendingProbe, { onPendingMount }),
+            },
+            createElement(MountProbe, { onMount }),
+          ),
+        ),
+      );
+    });
+
+    // 未解析:占位可见,正文不挂载 —— 手机远端不再是一整块空白。
+    expect(onPendingMount).toHaveBeenCalledTimes(1);
+    expect(onMount).not.toHaveBeenCalled();
+
+    act(() => {
+      registerRemoteWorkspaceSession({
+        sessionId: "remote-session-pending",
+        services: remoteServices,
+      });
+      bindRemoteWorkspaceIdentity(workspaceIdentity, "remote-session-pending");
+    });
+
+    // 解析完成:占位退场,正文恰好挂载一次。
+    expect(onMount).toHaveBeenCalledTimes(1);
+    expect(onPendingMount).toHaveBeenCalledTimes(1);
   });
 
   it("跨 workspace pane 在远端 endpoint ready 前不获取 conversation 连接", () => {

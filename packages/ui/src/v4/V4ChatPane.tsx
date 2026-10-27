@@ -47,6 +47,11 @@ export interface V4ChatPaneProps {
   onSessionDeleted?: () => void;
   /** 草稿态 composer contextHeader（m5，壳层构造下发）。 */
   draftComposerHeader?: ReactNode;
+  /**
+   * 连接未就绪(remote-waiting 等)时渲染的占位;不传保持原行为(渲染 null)。
+   * 手机直连壳用它给出可见的「连接中」态。
+   */
+  pending?: ReactNode;
   gitSummary?: GitRepositorySummary | null;
   gitDirtyFileCount?: number;
   gitWorktreeReviewSourceId?: GitChangeSourceId | null;
@@ -95,6 +100,7 @@ export function V4ChatPane({
   onSessionCreated,
   onSessionDeleted,
   draftComposerHeader,
+  pending,
   gitSummary,
   gitDirtyFileCount,
   gitWorktreeReviewSourceId,
@@ -127,7 +133,11 @@ export function V4ChatPane({
   onSearchResultHighlightDone,
 }: V4ChatPaneProps) {
   return (
-    <V4ConversationProvider workspacePath={workspacePath} workspaceIdentity={workspaceIdentity}>
+    <V4ConversationProvider
+      workspacePath={workspacePath}
+      workspaceIdentity={workspaceIdentity}
+      pending={pending}
+    >
       <SessionPane
         paneId="workspace-main"
         readOnly={readOnly}

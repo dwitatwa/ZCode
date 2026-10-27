@@ -105,6 +105,11 @@ export interface V4ConversationProviderProps {
   workspacePath: string;
   workspaceIdentity?: string;
   children: ReactNode;
+  /**
+   * 连接未就绪(remote-waiting 等)时渲染的占位节点;不传保持原行为(渲染 null)。
+   * 手机直连壳用它给出可见的「连接中」态,桌面调用方一律不传、行为不变。
+   */
+  pending?: ReactNode;
 }
 
 function ReadyV4ConversationProvider({
@@ -187,10 +192,11 @@ export function V4ConversationProvider({
   workspacePath,
   workspaceIdentity,
   children,
+  pending,
 }: V4ConversationProviderProps) {
   const resolution = useWorkspaceServicesResolution(workspacePath, undefined, workspaceIdentity);
   if (!resolution.rpcReady) {
-    return null;
+    return pending ?? null;
   }
 
   return (

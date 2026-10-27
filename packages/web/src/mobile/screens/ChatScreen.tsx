@@ -87,6 +87,8 @@ function ChatScreenBody({
           workspaceIdentity={meta.workspaceIdentity}
           sessionId={meta.taskId}
           onSessionCreated={onSessionCreated}
+          // 远端目标尚未解析时给出可见的「连接中」态;不传的桌面调用方仍是原行为。
+          pending={<div className="cs-loading">Connecting...</div>}
         />
       </div>
     </ConversationHost>
